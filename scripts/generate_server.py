@@ -4,7 +4,6 @@ Script to generate FastAPI server code from OpenAPI specification.
 This script can be used to regenerate the server implementation based on the OpenAPI spec.
 """
 
-import os
 import sys
 import yaml
 from pathlib import Path

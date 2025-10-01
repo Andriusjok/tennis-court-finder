@@ -1,9 +1,8 @@
 """Main FastAPI application for Tennis Court Finder."""
 
 from datetime import datetime, date
-from typing import List, Optional
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import JSONResponse
 from fastapi.openapi.utils import get_openapi
 import yaml
 import os
