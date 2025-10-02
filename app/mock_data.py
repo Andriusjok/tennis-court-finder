@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 from typing import List, Dict, Any
 from app.models import (
     TennisClub, Court, Location, Coordinates, CourtAvailability, 
-    TimeSlot, Subscription, PreferredTime
+    TimeSlot, Subscription, PreferredTime, NotificationPreferences
 )
 
 

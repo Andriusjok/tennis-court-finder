@@ -1,22 +1,21 @@
-[project]
+[tool.poetry]
 name = "tennis-court-finder"
 version = "0.1.0"
 description = "A tennis court finder application that sends alerts when court times become available"
-authors = [
-    {name = "Andrius Jokubauskas",email = "andrius@example.com"}
-]
+authors = ["Andrius Jokubauskas <andrius@example.com>"]
 readme = "README.md"
-requires-python = "^3.8"
-dependencies = [
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "pydantic>=2.5.0",
-    "httpx>=0.25.0",
-    "python-multipart>=0.0.6",
-    "email-validator>=2.1.0",
-    "pyyaml>=6.0.0",
-]
+packages = [{include = "app"}]
 
+[tool.poetry.dependencies]
+python = "^3.8"
+fastapi = ">=0.104.0"
+uvicorn = {extras = ["standard"], version = ">=0.24.0"}
+pydantic = ">=2.5.0"
+httpx = ">=0.25.0"
+python-multipart = ">=0.0.6"
+email-validator = ">=2.1.0"
+pyyaml = ">=6.0.0"
+requests = ">=2.31.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

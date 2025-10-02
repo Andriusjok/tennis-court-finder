@@ -57,6 +57,20 @@ class PreferredTime(BaseModel):
     end_time: str = Field(..., pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", description="End time (HH:MM)")
 
 
+class CourtPreference(BaseModel):
+    """Court preference for a specific club."""
+    club_id: str = Field(..., description="Club identifier")
+    court_ids: List[str] = Field(..., description="List of preferred court IDs")
+
+
+class AlertPreferences(BaseModel):
+    """Enhanced alert preferences."""
+    minimum_slot_duration_minutes: int = Field(default=60, ge=30, le=480, description="Minimum slot duration in minutes")
+    expiry_date: Optional[date] = Field(None, description="Alert expiry date (defaults to 1 year from creation)")
+    max_notifications_per_day: int = Field(default=3, ge=1, le=10, description="Maximum notifications per day")
+    notification_frequency_hours: int = Field(default=24, ge=1, le=168, description="Hours between availability checks")
+
+
 class NotificationPreferences(BaseModel):
     """Notification preferences."""
     email_enabled: bool = Field(default=True, description="Enable email notifications")
@@ -73,6 +87,19 @@ class SubscriptionRequest(BaseModel):
     )
 
 
+class EnhancedSubscriptionRequest(BaseModel):
+    """Enhanced request to create a new alert subscription."""
+    email: EmailStr = Field(..., description="User email address")
+    club_preferences: List[CourtPreference] = Field(..., min_items=1, description="Club and court preferences")
+    preferred_times: List[PreferredTime] = Field(..., min_items=1, description="Preferred time slots")
+    alert_preferences: Optional[AlertPreferences] = Field(
+        default_factory=AlertPreferences, description="Alert preferences"
+    )
+    notification_preferences: Optional[NotificationPreferences] = Field(
+        default_factory=NotificationPreferences, description="Notification preferences"
+    )
+
+
 class Subscription(BaseModel):
     """Subscription information."""
     id: str = Field(..., description="Unique subscription identifier")
@@ -82,6 +109,20 @@ class Subscription(BaseModel):
     status: str = Field(..., description="Subscription status")
     created_at: datetime = Field(..., description="Creation timestamp")
     last_notification: Optional[datetime] = Field(None, description="Last notification timestamp")
+
+
+class EnhancedSubscription(BaseModel):
+    """Enhanced subscription information."""
+    id: str = Field(..., description="Unique subscription identifier")
+    email: EmailStr = Field(..., description="User email address")
+    club_preferences: List[CourtPreference] = Field(..., description="Club and court preferences")
+    preferred_times: List[PreferredTime] = Field(..., description="Preferred time slots")
+    alert_preferences: AlertPreferences = Field(..., description="Alert preferences")
+    notification_preferences: NotificationPreferences = Field(..., description="Notification preferences")
+    status: str = Field(..., description="Subscription status")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    last_notification: Optional[datetime] = Field(None, description="Last notification timestamp")
+    next_check: Optional[datetime] = Field(None, description="Next availability check timestamp")
 
 
 class Error(BaseModel):
@@ -107,3 +148,24 @@ class AvailabilityResponse(BaseModel):
     club_id: str = Field(..., description="Club identifier")
     availability_date: date = Field(..., description="Date for availability")
     courts: List[CourtAvailability] = Field(..., description="Court availability information")
+
+
+class SentNotification(BaseModel):
+    """Record of a notification that was sent to prevent duplicates."""
+    id: str = Field(..., description="Unique notification record ID")
+    subscription_id: str = Field(..., description="Subscription that received the notification")
+    club_id: str = Field(..., description="Club where the court is located")
+    court_id: str = Field(..., description="Court that became available")
+    slot_start_time: datetime = Field(..., description="Start time of the available slot")
+    slot_end_time: datetime = Field(..., description="End time of the available slot")
+    sent_at: datetime = Field(..., description="When the notification was sent")
+    notification_type: str = Field(..., description="Type of notification (availability_alert)")
+
+
+class NotificationDeduplicationKey(BaseModel):
+    """Key for deduplication - represents a unique time slot notification."""
+    subscription_id: str
+    club_id: str
+    court_id: str
+    slot_start_time: datetime
+    slot_end_time: datetime
