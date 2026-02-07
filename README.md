@@ -1,85 +1,79 @@
 # Tennis Court Finder
 
-A Python-based application that monitors tennis court availability across integrated booking systems and sends real-time alerts to users when requested court times become available.
+Real-time tennis court availability tracker with notifications. Monitors integrated booking systems and alerts you when desired time slots open up.
 
-## Getting Started
+## What's Implemented
 
-### Prerequisites
-- **mise**: Development environment manager
-- **Poetry**: Python dependency management
-- **Python 3.8+**: Managed via mise
+| Area | Status | Details |
+|------|--------|---------|
+| **API (spec-first)** | ✅ | OpenAPI 3.0 spec → auto-generated Pydantic models → FastAPI |
+| **Web UI** | ✅ | Jinja2 + HTMX + Pico CSS — schedule grid, login, alert management |
+| **SEB Arena integration** | ✅ | Live court & slot data from [book.sebarena.lt](https://book.sebarena.lt) |
+| **Caching** | ✅ | Background refresh every 60 s — external API is never hit per-request |
+| **Auth** | 🔶 | Email OTP flow (mocked — any email + code `123456` works) |
+| **Notifications** | 🔶 | CRUD for subscriptions (in-memory, no actual delivery yet) |
+| **Database** | ❌ | All data is in-memory; subscriptions reset on restart |
 
-### Local Development Setup
+## Quick Start
 
-1. **Install mise**
-   ```bash
-   # macOS
-   brew install mise
-   
-   # Or visit https://mise.jdx.dev/ for other installation methods
-   ```
+```bash
+# 1. Install tooling (Python managed via mise)
+brew install mise        # or see https://mise.jdx.dev
+mise install             # installs Python version from .mise.toml
 
-2. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd tennis-court-finder
-   ```
+# 2. Install dependencies
+poetry install
 
-3. **Set up Python environment with mise**
-   ```bash
-   mise install
-   # This will install the Python version specified in .mise.toml
-   ```
+# 3. Run
+poetry run python main.py
+```
 
-4. **Install dependencies with Poetry**
-   ```bash
-   poetry install
-   ```
+Open [localhost:8000](http://localhost:8000) for the UI, or [localhost:8000/docs](http://localhost:8000/docs) for Swagger.
 
-5. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+## Project Structure
 
-6. **Run the application**
-   ```bash
-   poetry run python main.py
-   ```
+```
+openapi.yaml              ← single source of truth for the API contract
+app/
+  generated/models.py     ← auto-generated from openapi.yaml (do not edit)
+  routers/                ← FastAPI route handlers (API + HTML pages)
+  services/
+    tennis_club.py        ← TennisClubService protocol (interface)
+    cache.py              ← in-memory cache with background refresh
+    registry.py           ← service registry (maps club slugs → services)
+    seb_arena/            ← SEB Arena integration (client, service, config)
+  templates/              ← Jinja2 templates (base, pages, HTMX partials)
+scripts/generate.py       ← model generation script
+tests/
+  unit_tests/             ← pytest unit tests
+  integration_tests/      ← (placeholder)
+  mocks/                  ← shared mock data & services
+```
 
-7. **Access the API**
-   - API documentation: `http://localhost:8000/docs`
-   - Health check: `http://localhost:8000/health`
+## Development
 
-## Architecture
+### Regenerate models after editing `openapi.yaml`
 
-The application follows a decoupled architecture with clear separation of concerns:
+```bash
+poetry run generate
+```
 
-### Core Interfaces
+### Run tests
 
-#### Notification System
-- **Interface**: `NotificationService`
-- **Purpose**: Handles user alerts when court availability changes
-- **Available Implementations**:
-  - Email notifications
+```bash
+poetry run pytest
+```
 
-#### Tennis Club Integration
-- **Interface**: `TennisClubService`
-- **Purpose**: Manages integration with tennis club booking systems
-- **Available Implementations**:
-  - TBD (to be implemented)
+### Add a new club integration
 
-### API Endpoints
+1. Create `app/services/<club_slug>/` with `client.py`, `service.py`, `config.py`
+2. Implement the `TennisClubService` protocol (see `app/services/tennis_club.py`)
+3. Register it in `ClubRegistry.register_<club>()` inside `app/services/registry.py`
+4. Call the register method in `app/main.py` lifespan
 
-The application exposes RESTful APIs for:
+### Key conventions
 
-- **User Subscriptions**: Subscribe to court availability alerts
-- **Club Management**: View available tennis clubs and their booking systems
-- **Time Slots**: Query and monitor available court times
-
-### Key Components
-
-- **Booking Monitor**: Continuously monitors court availability
-- **Alert Engine**: Processes availability changes and triggers notifications
-- **API Gateway**: RESTful interface for external integrations
-- **Configuration Management**: Environment-based configuration system
+- **API-first**: edit `openapi.yaml`, regenerate models, then write route handlers
+- **Slug-based club IDs**: clubs use URL-friendly slugs (`seb-arena`), not UUIDs
+- **Cache-first reads**: routers → `CachedClubService` → in-memory cache; the external API is only called by the background refresh task
+- **HTMX partials**: templates under `partials/` are fragments returned for in-page swaps; full pages extend `base.html`

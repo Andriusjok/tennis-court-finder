@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}{{ club.name }} – Schedule{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h1>{{ club.name }}</h1>
+  <p>📍 {{ club.address }}, {{ club.city }}
+    {% if club.website %} · <a href="{{ club.website }}" target="_blank">Book on site ↗</a>{% endif %}
+  </p>
+</hgroup>
+
+<!-- Legend -->
+<div class="legend">
+  <span class="l-free">Free</span>
+  <span class="l-booked">Booked</span>
+  <span class="l-for-sale">For Sale</span>
+</div>
+
+<!-- Date navigation -->
+<div class="date-nav">
+  <a href="/clubs/{{ club.id }}/schedule?date={{ prev_date }}" role="button" class="outline">&larr;</a>
+  <input type="date" id="date-picker" value="{{ selected_date }}"
+         hx-get="/clubs/{{ club.id }}/schedule"
+         hx-target="body"
+         hx-push-url="true"
+         hx-include="[name='surface_type'],[name='court_type']"
+         name="date">
+  <a href="/clubs/{{ club.id }}/schedule?date={{ next_date }}" role="button" class="outline">&rarr;</a>
+  <a href="/clubs/{{ club.id }}/schedule" role="button" class="outline secondary">Today</a>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar">
+  <label>
+    Surface
+    <select name="surface_type"
+            hx-get="/partials/clubs/{{ club.id }}/slots"
+            hx-target="#slot-grid"
+            hx-include="[name='date'],[name='court_type']">
+      <option value="">All</option>
+      {% for st in surface_types %}
+      <option value="{{ st }}" {% if st == filters.surface_type %}selected{% endif %}>{{ st | replace('_', ' ') | title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Type
+    <select name="court_type"
+            hx-get="/partials/clubs/{{ club.id }}/slots"
+            hx-target="#slot-grid"
+            hx-include="[name='date'],[name='surface_type']">
+      <option value="">All</option>
+      {% for ct in court_types %}
+      <option value="{{ ct }}" {% if ct == filters.court_type %}selected{% endif %}>{{ ct | title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</div>
+
+<!-- Slot grid (HTMX-swappable) -->
+<div id="slot-grid">
+  {% include "partials/slot_grid.html" %}
+</div>
+
+<!-- Notification CTA -->
+<hr>
+<p>
+  Want to know when a slot opens up?
+  <a href="/notifications/new?club_id={{ club.id }}">Set up an alert →</a>
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Sync the flatpickr date picker with HTMX navigation
+  document.addEventListener("DOMContentLoaded", function() {
+    flatpickr("#date-picker", {
+      dateFormat: "Y-m-d",
+      onChange: function(selectedDates, dateStr) {
+        // HTMX will handle the request via hx-get on the input
+      }
+    });
+  });
+</script>
+{% endblock %}

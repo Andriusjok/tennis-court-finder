@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Clubs – Tennis Court Finder{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h1>Tennis Clubs</h1>
+  <p>Select a club to view court availability</p>
+</hgroup>
+
+<div class="club-grid">
+  {% for club in clubs %}
+  <article class="club-card">
+    <h3>{{ club.name }}</h3>
+    <p class="meta">
+      📍 {{ club.address }}, {{ club.city }}<br>
+      {% if club.phone %}📞 {{ club.phone }}<br>{% endif %}
+      {% if club.courts_count %}🏟️ {{ club.courts_count }} courts{% endif %}
+    </p>
+    <a href="/clubs/{{ club.id }}/schedule" role="button">View Schedule</a>
+  </article>
+  {% else %}
+  <p>No clubs available yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

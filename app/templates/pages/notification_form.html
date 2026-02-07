@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}New Alert – Tennis Court Finder{% endblock %}
+
+{% block content %}
+<h1>New Alert</h1>
+
+<form method="post" action="/notifications/new">
+  <!-- Club -->
+  <label>
+    Club
+    <select name="club_id" required>
+      {% for club in clubs %}
+      <option value="{{ club.id }}" {% if club.id == selected_club_id %}selected{% endif %}>
+        {{ club.name }}
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <!-- Notify on statuses -->
+  <fieldset>
+    <legend>Notify me when a slot becomes…</legend>
+    <label>
+      <input type="checkbox" name="notify_on_statuses" value="free" checked>
+      Free
+    </label>
+    <label>
+      <input type="checkbox" name="notify_on_statuses" value="for_sale">
+      For Sale
+    </label>
+  </fieldset>
+
+  <!-- Time range -->
+  <div class="grid">
+    <label>
+      From time
+      <input type="time" name="time_from" value="18:00">
+    </label>
+    <label>
+      To time
+      <input type="time" name="time_to" value="21:00">
+    </label>
+  </div>
+
+  <!-- Recurring? -->
+  <fieldset>
+    <legend>Schedule</legend>
+    <label>
+      <input type="radio" name="is_recurring" value="true" checked
+             onclick="document.getElementById('recurring-opts').style.display='block'; document.getElementById('onetime-opts').style.display='none';">
+      Weekly recurring
+    </label>
+    <label>
+      <input type="radio" name="is_recurring" value="false"
+             onclick="document.getElementById('recurring-opts').style.display='none'; document.getElementById('onetime-opts').style.display='block';">
+      Specific dates
+    </label>
+  </fieldset>
+
+  <!-- Recurring options -->
+  <div id="recurring-opts">
+    <fieldset>
+      <legend>Days of the week</legend>
+      {% for day in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
+      <label>
+        <input type="checkbox" name="days_of_week" value="{{ day }}"
+               {% if day in ['tuesday', 'thursday'] %}checked{% endif %}>
+        {{ day | title }}
+      </label>
+      {% endfor %}
+    </fieldset>
+  </div>
+
+  <!-- One-time options -->
+  <div id="onetime-opts" style="display:none;">
+    <label>
+      Specific dates (comma separated)
+      <input type="text" name="specific_dates" placeholder="2026-02-10, 2026-02-12">
+    </label>
+  </div>
+
+  <div class="grid">
+    <button type="submit">Create Alert</button>
+    <a href="/notifications" role="button" class="outline secondary" style="text-align:center;">Cancel</a>
+  </div>
+</form>
+{% endblock %}

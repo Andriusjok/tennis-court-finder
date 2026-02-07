@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}My Alerts – Tennis Court Finder{% endblock %}
+
+{% block content %}
+<hgroup>
+  <h1>My Alerts</h1>
+  <p>Get notified when a court slot becomes available</p>
+</hgroup>
+
+{% if flash %}
+<div class="flash {{ flash.type }}">{{ flash.message }}</div>
+{% endif %}
+
+<div style="margin-bottom: 1rem;">
+  <a href="/notifications/new" role="button">+ New Alert</a>
+</div>
+
+<div id="subscription-list"
+     hx-get="/partials/notifications"
+     hx-trigger="load"
+     hx-indicator="#subs-loading">
+  <span id="subs-loading" class="htmx-indicator" aria-busy="true">Loading alerts…</span>
+</div>
+{% endblock %}

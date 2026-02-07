@@ -1,404 +1,1153 @@
 openapi: 3.0.3
 info:
   title: Tennis Court Finder API
-  description: API for monitoring tennis court availability and sending alerts
-  version: 1.0.0
+  description: |
+    Monitors tennis court availability across integrated booking systems and sends
+    real-time alerts to users when requested court times become available.
+
+    ## Authentication Flow
+    1. User requests a one-time password (OTP) sent to their email
+    2. User verifies the OTP
+    3. Server returns a JWT stored in an HTTP-only cookie
+    4. All authenticated endpoints read identity from the JWT cookie
+  version: 0.1.0
   contact:
-    name: Tennis Court Finder Team
-    email: support@tenniscourtfinder.com
+    name: Tennis Court Finder
+  license:
+    name: Apache 2.0
 
 servers:
   - url: http://localhost:8000
-    description: Development server
-  - url: https://api.tenniscourtfinder.com
-    description: Production server
+    description: Local development server
+
+tags:
+  - name: health
+    description: Health check endpoints
+  - name: auth
+    description: Authentication via email OTP
+  - name: clubs
+    description: Tennis club information
+  - name: courts
+    description: Court information for a specific club
+  - name: time-slots
+    description: Court time slot availability
+  - name: notifications
+    description: Notification subscription management (requires authentication)
 
 paths:
-  /health:
+  # ── Health ──────────────────────────────────────────────────────────────
+  /api/health:
     get:
-      summary: Health check endpoint
-      description: Returns the health status of the API
-      operationId: health_check
+      operationId: getHealth
+      tags: [health]
+      summary: Health check
       responses:
-        '200':
-          description: API is healthy
+        "200":
+          description: Service is healthy
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: "healthy"
-                  timestamp:
-                    type: string
-                    format: date-time
-                    example: "2024-01-15T10:30:00Z"
+                $ref: "#/components/schemas/HealthResponse"
 
-  /clubs:
-    get:
-      summary: Get available tennis clubs
-      description: Returns a list of tennis clubs that can be monitored
-      operationId: get_tennis_clubs
-      responses:
-        '200':
-          description: List of tennis clubs
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  clubs:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/TennisClub'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /clubs/{club_id}/availability:
-    get:
-      summary: Get court availability for a specific club
-      description: Returns available court times for a specific tennis club
-      operationId: get_club_availability
-      parameters:
-        - name: club_id
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Unique identifier for the tennis club
-        - name: date
-          in: query
-          required: false
-          schema:
-            type: string
-            format: date
-          description: Date to check availability (defaults to today)
-      responses:
-        '200':
-          description: Court availability information
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  club_id:
-                    type: string
-                  availability_date:
-                    type: string
-                    format: date
-                  courts:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/CourtAvailability'
-        '404':
-          description: Club not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
-  /subscriptions:
+  # ── Auth ────────────────────────────────────────────────────────────────
+  /api/auth/request-otp:
     post:
-      summary: Create a new subscription
-      description: Subscribe to notifications for court availability
-      operationId: create_subscription
+      operationId: requestOtp
+      tags: [auth]
+      summary: Request a one-time password sent to the given email
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubscriptionRequest'
+              $ref: "#/components/schemas/OtpRequest"
       responses:
-        '201':
-          description: Subscription created successfully
+        "200":
+          description: OTP sent successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Subscription'
-        '400':
-          description: Invalid request data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                $ref: "#/components/schemas/OtpRequestResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          description: Too many OTP requests – try again later
 
-  /subscriptions/{subscription_id}:
+  /api/auth/verify-otp:
+    post:
+      operationId: verifyOtp
+      tags: [auth]
+      summary: Verify OTP and receive a JWT session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerifyRequest"
+      responses:
+        "200":
+          description: OTP verified – JWT set in cookie
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: session=eyJhbGciOi...; Path=/; HttpOnly; SameSite=Lax
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid or expired OTP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Clear the session cookie
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /api/auth/me:
     get:
-      summary: Get subscription details
-      description: Retrieve details of a specific subscription
-      operationId: get_subscription
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user info
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Current user information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Clubs ───────────────────────────────────────────────────────────────
+  /api/clubs:
+    get:
+      operationId: listClubs
+      tags: [clubs]
+      summary: List all integrated tennis clubs
       parameters:
-        - name: subscription_id
-          in: path
-          required: true
+        - name: city
+          in: query
+          required: false
           schema:
             type: string
-          description: Unique identifier for the subscription
+          description: Filter clubs by city name (case-insensitive partial match)
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
       responses:
-        '200':
-          description: Subscription details
+        "200":
+          description: Paginated list of clubs
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Subscription'
-        '404':
-          description: Subscription not found
+                $ref: "#/components/schemas/ClubListResponse"
+
+  /api/clubs/{club_id}:
+    get:
+      operationId: getClub
+      tags: [clubs]
+      summary: Get details of a specific club
+      parameters:
+        - $ref: "#/components/parameters/ClubIdParam"
+      responses:
+        "200":
+          description: Club details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Internal server error
+                $ref: "#/components/schemas/Club"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Courts ──────────────────────────────────────────────────────────────
+  /api/clubs/{club_id}/courts:
+    get:
+      operationId: listCourts
+      tags: [courts]
+      summary: List courts for a club
+      parameters:
+        - $ref: "#/components/parameters/ClubIdParam"
+        - name: surface_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SurfaceType"
+          description: Filter by surface type
+        - name: court_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CourtType"
+          description: Filter by indoor/outdoor
+      responses:
+        "200":
+          description: List of courts
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                type: array
+                items:
+                  $ref: "#/components/schemas/Court"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/clubs/{club_id}/courts/{court_id}:
+    get:
+      operationId: getCourt
+      tags: [courts]
+      summary: Get details of a specific court
+      parameters:
+        - $ref: "#/components/parameters/ClubIdParam"
+        - $ref: "#/components/parameters/CourtIdParam"
+      responses:
+        "200":
+          description: Court details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Court"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Time Slots ──────────────────────────────────────────────────────────
+  /api/clubs/{club_id}/time-slots:
+    get:
+      operationId: listClubTimeSlots
+      tags: [time-slots]
+      summary: List time slots across all courts of a club
+      description: |
+        Returns time slots for every court belonging to the club.
+        Use query parameters to filter by date range, status, or specific court.
+      parameters:
+        - $ref: "#/components/parameters/ClubIdParam"
+        - $ref: "#/components/parameters/DateFromParam"
+        - $ref: "#/components/parameters/DateToParam"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SlotStatus"
+          description: Filter by slot availability status
+        - name: court_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter to a specific court
+        - name: surface_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SurfaceType"
+          description: Filter by surface type
+        - name: court_type
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CourtType"
+          description: Filter by indoor/outdoor
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated time slots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeSlotListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/clubs/{club_id}/courts/{court_id}/time-slots:
+    get:
+      operationId: listCourtTimeSlots
+      tags: [time-slots]
+      summary: List time slots for a specific court
+      parameters:
+        - $ref: "#/components/parameters/ClubIdParam"
+        - $ref: "#/components/parameters/CourtIdParam"
+        - $ref: "#/components/parameters/DateFromParam"
+        - $ref: "#/components/parameters/DateToParam"
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SlotStatus"
+          description: Filter by slot availability status
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated time slots for the court
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeSlotListResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Notifications (authenticated) ───────────────────────────────────────
+  /api/notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List the authenticated user's notification subscriptions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: active
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter by active/inactive status
+        - name: club_id
+          in: query
+          required: false
+          schema:
+            type: string
+            example: seb-arena
+          description: Filter by club slug
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated list of notification subscriptions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSubscriptionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createNotification
+      tags: [notifications]
+      summary: Create a new notification subscription
+      description: |
+        Subscribe to be notified when a time slot matching your criteria becomes
+        available or changes status.
+
+        **One-time**: provide `specific_dates` to watch for slots on particular dates.
+        **Recurring**: set `is_recurring` to true and provide `days_of_week` to be
+        notified on a weekly schedule (e.g. every Tuesday and Thursday).
+
+        You can combine club, court, surface, and time filters to narrow the match.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationSubscriptionCreate"
+      responses:
+        "201":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSubscription"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/notifications/{notification_id}:
+    get:
+      operationId: getNotification
+      tags: [notifications]
+      summary: Get a specific notification subscription
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/NotificationIdParam"
+      responses:
+        "200":
+          description: Notification subscription details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSubscription"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateNotification
+      tags: [notifications]
+      summary: Fully update a notification subscription
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/NotificationIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationSubscriptionUpdate"
+      responses:
+        "200":
+          description: Subscription updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSubscription"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
     delete:
-      summary: Cancel a subscription
-      description: Cancel an existing subscription
-      operationId: cancel_subscription
+      operationId: deleteNotification
+      tags: [notifications]
+      summary: Delete a notification subscription
+      security:
+        - cookieAuth: []
       parameters:
-        - name: subscription_id
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Unique identifier for the subscription
+        - $ref: "#/components/parameters/NotificationIdParam"
       responses:
-        '204':
-          description: Subscription cancelled successfully
-        '404':
-          description: Subscription not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+        "204":
+          description: Subscription deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
+  /api/notifications/{notification_id}/toggle:
+    patch:
+      operationId: toggleNotification
+      tags: [notifications]
+      summary: Activate or deactivate a notification subscription
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/NotificationIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationToggle"
+      responses:
+        "200":
+          description: Subscription toggled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSubscription"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/notifications/{notification_id}/logs:
+    get:
+      operationId: listNotificationLogs
+      tags: [notifications]
+      summary: List sent notification logs for a subscription
+      description: |
+        Returns the history of notifications that were actually sent for this
+        subscription – useful for auditing and debugging.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/NotificationIdParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Paginated notification logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationLogListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Components
+# ═══════════════════════════════════════════════════════════════════════════
 components:
+  # ── Security Schemes ──────────────────────────────────────────────────
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+      description: JWT session token stored in an HTTP-only cookie
+
+  # ── Reusable Parameters ──────────────────────────────────────────────
+  parameters:
+    ClubIdParam:
+      name: club_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        example: seb-arena
+      description: URL-friendly slug identifier of the tennis club
+
+    CourtIdParam:
+      name: court_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Unique identifier of the court
+
+    NotificationIdParam:
+      name: notification_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Unique identifier of the notification subscription
+
+    DateFromParam:
+      name: date_from
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+      description: Start of date range (inclusive, defaults to today)
+
+    DateToParam:
+      name: date_to
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+      description: End of date range (inclusive, defaults to 7 days from today)
+
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number (1-indexed)
+
+    PageSizeParam:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Number of items per page
+
+  # ── Reusable Responses ──────────────────────────────────────────────
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationErrorResponse"
+
+  # ── Schemas ─────────────────────────────────────────────────────────
   schemas:
-    TennisClub:
-      type: object
-      required:
-        - id
-        - name
-        - location
-        - booking_system
-      properties:
-        id:
-          type: string
-          description: Unique identifier for the club
-          example: "club_123"
-        name:
-          type: string
-          description: Name of the tennis club
-          example: "Central Tennis Club"
-        location:
-          type: object
-          properties:
-            address:
-              type: string
-              example: "123 Tennis Street, City, State 12345"
-            coordinates:
-              type: object
-              properties:
-                lat:
-                  type: number
-                  format: float
-                  example: 40.7128
-                lng:
-                  type: number
-                  format: float
-                  example: -74.0060
-        booking_system:
-          type: string
-          description: Type of booking system used
-          example: "courtreserve"
-        courts:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                example: "court_1"
-              name:
-                type: string
-                example: "Court 1"
-              surface:
-                type: string
-                example: "hard"
-              indoor:
-                type: boolean
-                example: false
+    # ── Enums ───────────────────────────────────────────────────────
+    SurfaceType:
+      type: string
+      enum: [hard, clay, carpet, grass, artificial_grass]
+      description: Court surface material
 
-    CourtAvailability:
-      type: object
-      required:
-        - court_id
-        - time_slots
-      properties:
-        court_id:
-          type: string
-          example: "court_1"
-        court_name:
-          type: string
-          example: "Court 1"
-        time_slots:
-          type: array
-          items:
-            $ref: '#/components/schemas/TimeSlot'
+    CourtType:
+      type: string
+      enum: [indoor, outdoor]
+      description: Whether the court is indoors or outdoors
 
-    TimeSlot:
-      type: object
-      required:
-        - start_time
-        - end_time
-        - available
-      properties:
-        start_time:
-          type: string
-          format: date-time
-          example: "2024-01-15T10:00:00Z"
-        end_time:
-          type: string
-          format: date-time
-          example: "2024-01-15T11:00:00Z"
-        available:
-          type: boolean
-          example: true
-        price:
-          type: number
-          format: float
-          example: 25.00
-        currency:
-          type: string
-          example: "USD"
+    SlotStatus:
+      type: string
+      enum: [free, for_sale, booked]
+      description: |
+        Availability status of a time slot:
+        - **free** – available for booking
+        - **for_sale** – a previously booked slot released for resale
+        - **booked** – currently reserved
 
-    SubscriptionRequest:
-      type: object
-      required:
-        - email
-        - club_id
-        - preferred_times
-      properties:
-        email:
-          type: string
-          format: email
-          example: "user@example.com"
-        club_id:
-          type: string
-          example: "club_123"
-        preferred_times:
-          type: array
-          items:
-            type: object
-            properties:
-              day_of_week:
-                type: integer
-                minimum: 0
-                maximum: 6
-                example: 1
-                description: "0=Monday, 6=Sunday"
-              start_time:
-                type: string
-                pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
-                example: "10:00"
-              end_time:
-                type: string
-                pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
-                example: "12:00"
-        notification_preferences:
-          type: object
-          properties:
-            email_enabled:
-              type: boolean
-              default: true
-            sms_enabled:
-              type: boolean
-              default: false
+    DayOfWeek:
+      type: string
+      enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
 
-    Subscription:
+    # ── Generic ─────────────────────────────────────────────────────
+    HealthResponse:
       type: object
-      required:
-        - id
-        - email
-        - club_id
-        - status
-        - created_at
+      required: [status, version]
       properties:
-        id:
-          type: string
-          example: "sub_456"
-        email:
-          type: string
-          format: email
-          example: "user@example.com"
-        club_id:
-          type: string
-          example: "club_123"
-        preferred_times:
-          type: array
-          items:
-            type: object
-            properties:
-              day_of_week:
-                type: integer
-                example: 1
-              start_time:
-                type: string
-                example: "10:00"
-              end_time:
-                type: string
-                example: "12:00"
         status:
           type: string
-          enum: [active, paused, cancelled]
-          example: "active"
+          example: ok
+        version:
+          type: string
+          example: 0.1.0
+        timestamp:
+          type: string
+          format: date-time
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          example: Resource not found
+
+    ValidationErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              type:
+                type: string
+
+    PaginationMeta:
+      type: object
+      required: [page, page_size, total_items, total_pages]
+      properties:
+        page:
+          type: integer
+          example: 1
+        page_size:
+          type: integer
+          example: 20
+        total_items:
+          type: integer
+          example: 42
+        total_pages:
+          type: integer
+          example: 3
+
+    # ── Auth ────────────────────────────────────────────────────────
+    OtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: player@example.com
+
+    OtpRequestResponse:
+      type: object
+      required: [message, expires_in_seconds]
+      properties:
+        message:
+          type: string
+          example: OTP sent to your email
+        expires_in_seconds:
+          type: integer
+          example: 300
+
+    OtpVerifyRequest:
+      type: object
+      required: [email, otp_code]
+      properties:
+        email:
+          type: string
+          format: email
+          example: player@example.com
+        otp_code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          example: "482910"
+
+    AuthResponse:
+      type: object
+      required: [message, user]
+      properties:
+        message:
+          type: string
+          example: Authenticated successfully
+        user:
+          $ref: "#/components/schemas/UserInfo"
+
+    UserInfo:
+      type: object
+      required: [email, created_at]
+      properties:
+        email:
+          type: string
+          format: email
         created_at:
           type: string
           format: date-time
-          example: "2024-01-15T10:30:00Z"
-        last_notification:
+
+    # ── Club ────────────────────────────────────────────────────────
+    Club:
+      type: object
+      required: [id, name, address, city]
+      properties:
+        id:
+          type: string
+          description: URL-friendly slug identifier
+          example: seb-arena
+        name:
+          type: string
+          example: City Tennis Club
+        address:
+          type: string
+          example: 123 Racket Lane
+        city:
+          type: string
+          example: Vilnius
+        phone:
+          type: string
+          nullable: true
+          example: "+37060000000"
+        website:
+          type: string
+          format: uri
+          nullable: true
+          example: https://citytennisclub.lt
+        image_url:
+          type: string
+          format: uri
+          nullable: true
+        courts_count:
+          type: integer
+          description: Number of courts at this club
+          example: 6
+
+    ClubListResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Club"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    # ── Court ───────────────────────────────────────────────────────
+    Court:
+      type: object
+      required: [id, club_id, name, surface_type, court_type]
+      properties:
+        id:
+          type: string
+          format: uuid
+        club_id:
+          type: string
+          description: Slug of the parent club
+          example: seb-arena
+        name:
+          type: string
+          example: Court 1
+        surface_type:
+          $ref: "#/components/schemas/SurfaceType"
+        court_type:
+          $ref: "#/components/schemas/CourtType"
+        description:
+          type: string
+          nullable: true
+          example: Main show court with floodlights
+
+    # ── Time Slot ───────────────────────────────────────────────────
+    TimeSlot:
+      type: object
+      required: [id, court_id, club_id, court_name, start_time, end_time, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        court_id:
+          type: string
+          format: uuid
+        club_id:
+          type: string
+          description: Slug of the parent club
+          example: seb-arena
+        court_name:
+          type: string
+          example: Court 1
+          description: Denormalized court name for display convenience
+        surface_type:
+          $ref: "#/components/schemas/SurfaceType"
+        court_type:
+          $ref: "#/components/schemas/CourtType"
+        start_time:
           type: string
           format: date-time
-          example: "2024-01-15T09:15:00Z"
+        end_time:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+          example: 60
+        status:
+          $ref: "#/components/schemas/SlotStatus"
+        price:
+          type: number
+          format: float
+          nullable: true
+          example: 25.00
+        currency:
+          type: string
+          nullable: true
+          example: EUR
 
-    Error:
+    TimeSlotListResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimeSlot"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    # ── Notification Subscription ───────────────────────────────────
+    NotificationSubscription:
       type: object
       required:
-        - error
-        - message
+        - id
+        - club_id
+        - notify_on_statuses
+        - is_recurring
+        - active
+        - created_at
+        - updated_at
       properties:
-        error:
+        id:
           type: string
-          example: "validation_error"
-        message:
+          format: uuid
+        club_id:
           type: string
-          example: "Invalid email format"
-        details:
-          type: object
-          example: {"field": "email", "value": "invalid-email"}
+          description: Slug of the club being watched
+          example: seb-arena
+        club_name:
+          type: string
+          description: Denormalized club name for display
+          example: City Tennis Club
+        court_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          nullable: true
+          description: Specific courts to watch (null or empty = all courts in the club)
+        surface_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/SurfaceType"
+          nullable: true
+          description: Filter by surface type (null = any)
+        court_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/CourtType"
+          nullable: true
+          description: Filter by indoor/outdoor (null = any)
+        notify_on_statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlotStatus"
+          minItems: 1
+          description: Statuses that trigger a notification (e.g. [free, for_sale])
+        time_from:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          nullable: true
+          example: "18:00"
+          description: Earliest time of day to watch (HH:MM, 24h)
+        time_to:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          nullable: true
+          example: "21:00"
+          description: Latest time of day to watch (HH:MM, 24h)
+        is_recurring:
+          type: boolean
+          description: Whether this is a weekly recurring watch
+        days_of_week:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayOfWeek"
+          nullable: true
+          description: Days of the week to watch (required when is_recurring is true)
+        specific_dates:
+          type: array
+          items:
+            type: string
+            format: date
+          nullable: true
+          description: Specific dates to watch (used when is_recurring is false)
+        date_range_start:
+          type: string
+          format: date
+          nullable: true
+          description: Start watching from this date (inclusive)
+        date_range_end:
+          type: string
+          format: date
+          nullable: true
+          description: Stop watching after this date (inclusive)
+        active:
+          type: boolean
+          description: Whether this subscription is currently active
+        match_count:
+          type: integer
+          description: Number of times this subscription has matched
+          example: 5
+        last_notified_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the last notification was sent
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NotificationSubscriptionCreate:
+      type: object
+      required: [club_id, notify_on_statuses, is_recurring]
+      properties:
+        club_id:
+          type: string
+          description: Slug of the club to watch
+          example: seb-arena
+        court_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          nullable: true
+        surface_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/SurfaceType"
+          nullable: true
+        court_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/CourtType"
+          nullable: true
+        notify_on_statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlotStatus"
+          minItems: 1
+        time_from:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          nullable: true
+          example: "18:00"
+        time_to:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          nullable: true
+          example: "21:00"
+        is_recurring:
+          type: boolean
+        days_of_week:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayOfWeek"
+          nullable: true
+        specific_dates:
+          type: array
+          items:
+            type: string
+            format: date
+          nullable: true
+        date_range_start:
+          type: string
+          format: date
+          nullable: true
+        date_range_end:
+          type: string
+          format: date
+          nullable: true
+
+    NotificationSubscriptionUpdate:
+      type: object
+      required: [club_id, notify_on_statuses, is_recurring]
+      properties:
+        club_id:
+          type: string
+          description: Slug of the club to watch
+          example: seb-arena
+        court_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          nullable: true
+        surface_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/SurfaceType"
+          nullable: true
+        court_types:
+          type: array
+          items:
+            $ref: "#/components/schemas/CourtType"
+          nullable: true
+        notify_on_statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/SlotStatus"
+          minItems: 1
+        time_from:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          nullable: true
+          example: "18:00"
+        time_to:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          nullable: true
+          example: "21:00"
+        is_recurring:
+          type: boolean
+        days_of_week:
+          type: array
+          items:
+            $ref: "#/components/schemas/DayOfWeek"
+          nullable: true
+        specific_dates:
+          type: array
+          items:
+            type: string
+            format: date
+          nullable: true
+        date_range_start:
+          type: string
+          format: date
+          nullable: true
+        date_range_end:
+          type: string
+          format: date
+          nullable: true
+
+    NotificationToggle:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
+          description: Set to true to activate, false to deactivate
+
+    NotificationSubscriptionListResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationSubscription"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    # ── Notification Log ────────────────────────────────────────────
+    NotificationLog:
+      type: object
+      required: [id, subscription_id, sent_at, channel, time_slot]
+      properties:
+        id:
+          type: string
+          format: uuid
+        subscription_id:
+          type: string
+          format: uuid
+        sent_at:
+          type: string
+          format: date-time
+        channel:
+          type: string
+          enum: [email]
+          description: Notification channel used
+        time_slot:
+          $ref: "#/components/schemas/TimeSlot"
+          description: The time slot that triggered the notification
+        status:
+          type: string
+          enum: [sent, failed]
+        error_message:
+          type: string
+          nullable: true
+
+    NotificationLogListResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationLog"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"

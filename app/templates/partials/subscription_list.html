@@ -1,0 +1,66 @@
+{% if subscriptions %}
+<table>
+  <thead>
+    <tr>
+      <th>Club</th>
+      <th>Watching for</th>
+      <th>Schedule</th>
+      <th>Time</th>
+      <th>Active</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for sub in subscriptions %}
+    <tr>
+      <td>{{ sub.club_name or sub.club_id }}</td>
+      <td>
+        {% for s in sub.notify_on_statuses %}
+          <mark>{{ s | replace('_', ' ') }}</mark>
+        {% endfor %}
+      </td>
+      <td>
+        {% if sub.is_recurring and sub.days_of_week %}
+          {{ sub.days_of_week | map('title') | join(', ') }}
+        {% elif sub.specific_dates %}
+          {{ sub.specific_dates | join(', ') }}
+        {% else %}
+          Any
+        {% endif %}
+      </td>
+      <td>
+        {% if sub.time_from and sub.time_to %}
+          {{ sub.time_from }}–{{ sub.time_to }}
+        {% else %}
+          All day
+        {% endif %}
+      </td>
+      <td>
+        <input type="checkbox"
+               role="switch"
+               {% if sub.active %}checked{% endif %}
+               hx-patch="/api/notifications/{{ sub.id }}/toggle"
+               hx-headers='{"Content-Type": "application/json"}'
+               hx-vals='{% if sub.active %}{"active": false}{% else %}{"active": true}{% endif %}'
+               hx-target="#subscription-list"
+               hx-get="/partials/notifications"
+               hx-swap="innerHTML"
+               hx-trigger="change">
+      </td>
+      <td>
+        <button class="outline secondary"
+                hx-delete="/api/notifications/{{ sub.id }}"
+                hx-target="#subscription-list"
+                hx-get="/partials/notifications"
+                hx-swap="innerHTML"
+                hx-confirm="Delete this alert?">
+          ✕
+        </button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-muted">No alerts set up yet. Create one to get notified when a court opens up.</p>
+{% endif %}
