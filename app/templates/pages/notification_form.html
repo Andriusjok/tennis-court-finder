@@ -1,88 +1,198 @@
 {% extends "base.html" %}
 
-{% block title %}New Alert – Tennis Court Finder{% endblock %}
+{% block title %}{{ "Edit" if editing else "New" }} Alert – Tennis Court Finder{% endblock %}
 
 {% block content %}
-<h1>New Alert</h1>
+<hgroup>
+  <h1>{{ "Edit" if editing else "New" }} Alert</h1>
+  <p>{{ "Update your notification settings" if editing else "Get notified when a court slot becomes available" }}</p>
+</hgroup>
 
-<form method="post" action="/notifications/new">
-  <!-- Club -->
+<form method="post"
+      action="{{ '/notifications/' ~ sub.id ~ '/edit' if editing else '/notifications/new' }}">
+
+  <!-- ── Club ──────────────────────────────────────────────────────── -->
   <label>
     Club
-    <select name="club_id" required>
+    <select name="club_id" required
+            hx-get="/partials/club-courts"
+            hx-target="#court-picker"
+            hx-trigger="change"
+            hx-include="this">
+      <option value="">Select a club…</option>
       {% for club in clubs %}
-      <option value="{{ club.id }}" {% if club.id == selected_club_id %}selected{% endif %}>
+      <option value="{{ club.id }}"
+              {% if (editing and sub.club_id == club.id) or (not editing and club.id == selected_club_id) %}selected{% endif %}>
         {{ club.name }}
       </option>
       {% endfor %}
     </select>
   </label>
 
-  <!-- Notify on statuses -->
-  <fieldset>
-    <legend>Notify me when a slot becomes…</legend>
-    <label>
-      <input type="checkbox" name="notify_on_statuses" value="free" checked>
-      Free
-    </label>
-    <label>
-      <input type="checkbox" name="notify_on_statuses" value="for_sale">
-      For Sale
-    </label>
-  </fieldset>
-
-  <!-- Time range -->
-  <div class="grid">
-    <label>
-      From time
-      <input type="time" name="time_from" value="18:00">
-    </label>
-    <label>
-      To time
-      <input type="time" name="time_to" value="21:00">
-    </label>
+  <!-- ── Courts (loaded dynamically) ──────────────────────────────── -->
+  <div id="court-picker">
+    {% if courts %}
+    <fieldset>
+      <legend>Courts <small class="text-muted">(optional – leave empty for all)</small></legend>
+      <div class="court-picker-grid">
+        {% for court in courts %}
+        <label class="court-chip">
+          <input type="checkbox" name="court_ids" value="{{ court.id }}"
+                 {% if editing and sub.court_ids and court.id | string in sub.court_ids %}checked{% endif %}>
+          <span class="court-chip-body">
+            <strong>{{ court.name }}</strong>
+            <small>{{ court.surface_type | replace('_', ' ') | title }} · {{ court.court_type | title }}</small>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% endif %}
   </div>
 
-  <!-- Recurring? -->
+  <!-- ── Notify on statuses ───────────────────────────────────────── -->
   <fieldset>
-    <legend>Schedule</legend>
-    <label>
-      <input type="radio" name="is_recurring" value="true" checked
-             onclick="document.getElementById('recurring-opts').style.display='block'; document.getElementById('onetime-opts').style.display='none';">
-      Weekly recurring
-    </label>
-    <label>
-      <input type="radio" name="is_recurring" value="false"
-             onclick="document.getElementById('recurring-opts').style.display='none'; document.getElementById('onetime-opts').style.display='block';">
-      Specific dates
-    </label>
+    <legend>Notify me when a slot becomes…</legend>
+    <div style="display:flex; gap:1.5rem;">
+      <label>
+        <input type="checkbox" name="notify_on_statuses" value="free"
+               {% if not editing or 'free' in sub.notify_on_statuses %}checked{% endif %}>
+        🟢 Free
+      </label>
+      <label>
+        <input type="checkbox" name="notify_on_statuses" value="for_sale"
+               {% if editing and 'for_sale' in sub.notify_on_statuses %}checked{% endif %}>
+        🟠 For Sale
+      </label>
+    </div>
   </fieldset>
 
-  <!-- Recurring options -->
-  <div id="recurring-opts">
+  <!-- ── Time range ───────────────────────────────────────────────── -->
+  <fieldset>
+    <legend>Preferred time window</legend>
+    <div class="grid">
+      <label>
+        From
+        <input type="time" name="time_from"
+               value="{{ sub.time_from if editing and sub.time_from else '08:00' }}">
+      </label>
+      <label>
+        To
+        <input type="time" name="time_to"
+               value="{{ sub.time_to if editing and sub.time_to else '22:00' }}">
+      </label>
+    </div>
+  </fieldset>
+
+  <!-- ── Schedule type ────────────────────────────────────────────── -->
+  <fieldset>
+    <legend>Schedule</legend>
+    <div style="display:flex; gap:1.5rem; margin-bottom:0.5rem;">
+      <label>
+        <input type="radio" name="is_recurring" value="true"
+               {% if not editing or sub.is_recurring %}checked{% endif %}
+               onclick="document.getElementById('recurring-opts').style.display='block'; document.getElementById('onetime-opts').style.display='none';">
+        📅 Weekly recurring
+      </label>
+      <label>
+        <input type="radio" name="is_recurring" value="false"
+               {% if editing and not sub.is_recurring %}checked{% endif %}
+               onclick="document.getElementById('recurring-opts').style.display='none'; document.getElementById('onetime-opts').style.display='block';">
+        📌 Specific dates
+      </label>
+    </div>
+  </fieldset>
+
+  <!-- ── Recurring: days of week ──────────────────────────────────── -->
+  <div id="recurring-opts"
+       style="{% if editing and not sub.is_recurring %}display:none{% endif %}">
     <fieldset>
       <legend>Days of the week</legend>
-      {% for day in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
-      <label>
-        <input type="checkbox" name="days_of_week" value="{{ day }}"
-               {% if day in ['tuesday', 'thursday'] %}checked{% endif %}>
-        {{ day | title }}
-      </label>
-      {% endfor %}
+      <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1.2rem;">
+        {% for day in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
+        <label>
+          <input type="checkbox" name="days_of_week" value="{{ day }}"
+                 {% if editing and sub.days_of_week and day in sub.days_of_week %}checked{% endif %}
+                 {% if not editing and day in ['tuesday', 'thursday'] %}checked{% endif %}>
+          {{ day | title }}
+        </label>
+        {% endfor %}
+      </div>
     </fieldset>
   </div>
 
-  <!-- One-time options -->
-  <div id="onetime-opts" style="display:none;">
+  <!-- ── One-time: specific dates ─────────────────────────────────── -->
+  <div id="onetime-opts"
+       style="{% if not editing or sub.is_recurring %}display:none{% endif %}">
     <label>
-      Specific dates (comma separated)
-      <input type="text" name="specific_dates" placeholder="2026-02-10, 2026-02-12">
+      Specific dates
+      <input type="text" name="specific_dates" id="specific-dates-input"
+             placeholder="Click to pick dates…"
+             value="{% if editing and sub.specific_dates %}{{ sub.specific_dates | join(', ') }}{% endif %}">
     </label>
   </div>
 
-  <div class="grid">
-    <button type="submit">Create Alert</button>
+  <!-- ── Surface & court type filters ─────────────────────────────── -->
+  <details>
+    <summary>Advanced filters (surface type, indoor/outdoor)</summary>
+
+    <fieldset>
+      <legend>Surface types <small class="text-muted">(optional)</small></legend>
+      <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1.2rem;">
+        {% for st in surface_types %}
+        <label>
+          <input type="checkbox" name="surface_types" value="{{ st }}"
+                 {% if editing and sub.surface_types and st in sub.surface_types %}checked{% endif %}>
+          {{ st | replace('_', ' ') | title }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Court type <small class="text-muted">(optional)</small></legend>
+      <div style="display:flex; gap:1.5rem;">
+        {% for ct in court_types %}
+        <label>
+          <input type="checkbox" name="court_types" value="{{ ct }}"
+                 {% if editing and sub.court_types and ct in sub.court_types %}checked{% endif %}>
+          {{ ct | title }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+  </details>
+
+  <!-- ── Actions ──────────────────────────────────────────────────── -->
+  <div class="grid" style="margin-top:1rem;">
+    <button type="submit">{{ "Save Changes" if editing else "Create Alert" }}</button>
     <a href="/notifications" role="button" class="outline secondary" style="text-align:center;">Cancel</a>
   </div>
 </form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Flatpickr for date picking
+  document.addEventListener('DOMContentLoaded', function() {
+    const input = document.getElementById('specific-dates-input');
+    if (input) {
+      flatpickr(input, {
+        mode: 'multiple',
+        dateFormat: 'Y-m-d',
+        minDate: 'today',
+        conjunction: ', ',
+      });
+    }
+  });
+
+  // Auto-load courts for pre-selected club on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    const clubSelect = document.querySelector('select[name="club_id"]');
+    if (clubSelect && clubSelect.value) {
+      htmx.trigger(clubSelect, 'change');
+    }
+  });
+</script>
 {% endblock %}

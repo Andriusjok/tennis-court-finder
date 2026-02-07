@@ -42,9 +42,24 @@ SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "noreply@tenniscourtfinder.local")
 SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 
+# Set to "false" to force console-only mode even when SMTP credentials are present.
+# Handy for local development to avoid burning real SMTP quota.
+_SMTP_ENABLED_OVERRIDE: str = os.getenv("SMTP_ENABLED", "auto")
+
 
 def smtp_enabled() -> bool:
-    """True when SMTP credentials are fully configured."""
+    """True when SMTP should actually send emails.
+
+    Controlled by SMTP_ENABLED env var:
+      • "auto" (default) — send if credentials are configured
+      • "true"  — always send (will fail if credentials are missing)
+      • "false" — never send, print to console instead
+    """
+    if _SMTP_ENABLED_OVERRIDE.lower() == "false":
+        return False
+    if _SMTP_ENABLED_OVERRIDE.lower() == "true":
+        return True
+    # "auto": send only when credentials are fully configured
     return bool(SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD)
 
 

@@ -1,66 +1,97 @@
 {% if subscriptions %}
-<table>
-  <thead>
-    <tr>
-      <th>Club</th>
-      <th>Watching for</th>
-      <th>Schedule</th>
-      <th>Time</th>
-      <th>Active</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for sub in subscriptions %}
-    <tr>
-      <td>{{ sub.club_name or sub.club_id }}</td>
-      <td>
-        {% for s in sub.notify_on_statuses %}
-          <mark>{{ s | replace('_', ' ') }}</mark>
-        {% endfor %}
-      </td>
-      <td>
-        {% if sub.is_recurring and sub.days_of_week %}
-          {{ sub.days_of_week | map('title') | join(', ') }}
-        {% elif sub.specific_dates %}
-          {{ sub.specific_dates | join(', ') }}
-        {% else %}
-          Any
-        {% endif %}
-      </td>
-      <td>
-        {% if sub.time_from and sub.time_to %}
-          {{ sub.time_from }}–{{ sub.time_to }}
-        {% else %}
-          All day
-        {% endif %}
-      </td>
-      <td>
-        <input type="checkbox"
-               role="switch"
-               {% if sub.active %}checked{% endif %}
-               hx-patch="/api/notifications/{{ sub.id }}/toggle"
-               hx-headers='{"Content-Type": "application/json"}'
-               hx-vals='{% if sub.active %}{"active": false}{% else %}{"active": true}{% endif %}'
-               hx-target="#subscription-list"
-               hx-get="/partials/notifications"
-               hx-swap="innerHTML"
-               hx-trigger="change">
-      </td>
-      <td>
-        <button class="outline secondary"
-                hx-delete="/api/notifications/{{ sub.id }}"
-                hx-target="#subscription-list"
-                hx-get="/partials/notifications"
-                hx-swap="innerHTML"
-                hx-confirm="Delete this alert?">
-          ✕
-        </button>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div style="display:flex; flex-direction:column; gap:1rem;">
+  {% for sub in subscriptions %}
+  <article class="{% if not sub.active %}sub-inactive{% endif %}" style="margin:0; padding:1rem 1.2rem;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap;">
+      <!-- Left: info -->
+      <div style="flex:1; min-width:200px;">
+        <h4 style="margin-bottom:0.3rem;">
+          {{ sub.club_name or sub.club_id }}
+        </h4>
+
+        <div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:0.5rem;">
+          {% for s in sub.notify_on_statuses %}
+          <mark style="font-size:0.8rem;">
+            {% if s == 'free' %}🟢{% elif s == 'for_sale' %}🟠{% endif %}
+            {{ s | replace('_', ' ') | title }}
+          </mark>
+          {% endfor %}
+        </div>
+
+        <div style="font-size:0.85rem; color:var(--pico-muted-color); line-height:1.6;">
+          <!-- Schedule -->
+          <span>
+            {% if sub.is_recurring and sub.days_of_week %}
+              📅 {{ sub.days_of_week | map('title') | join(', ') }}
+            {% elif sub.specific_dates %}
+              📌 {{ sub.specific_dates | join(', ') }}
+            {% else %}
+              📅 Every day
+            {% endif %}
+          </span>
+          <br>
+
+          <!-- Time window -->
+          <span>
+            🕐
+            {% if sub.time_from and sub.time_to %}
+              {{ sub.time_from }} – {{ sub.time_to }}
+            {% else %}
+              All day
+            {% endif %}
+          </span>
+
+          {% if sub.surface_types %}
+          <br><span>🎾 {{ sub.surface_types | map('title') | join(', ') }}</span>
+          {% endif %}
+
+          {% if sub.court_types %}
+          <br><span>🏟️ {{ sub.court_types | map('title') | join(', ') }}</span>
+          {% endif %}
+
+          {% if sub.match_count and sub.match_count > 0 %}
+          <br><span>📊 {{ sub.match_count }} match{{ 'es' if sub.match_count != 1 }} sent</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Right: actions -->
+      <div style="display:flex; align-items:center; gap:0.5rem; flex-shrink:0;">
+        <!-- Toggle active/inactive -->
+        <form method="post" action="/notifications/{{ sub.id }}/toggle" style="margin:0;">
+          <input type="hidden" name="active" value="{{ 'false' if sub.active else 'true' }}">
+          <button type="submit" class="outline {% if sub.active %}contrast{% else %}secondary{% endif %}"
+                  style="padding:0.3rem 0.6rem; font-size:0.8rem; margin:0;"
+                  title="{{ 'Pause' if sub.active else 'Activate' }}">
+            {{ '⏸️ Pause' if sub.active else '▶️ Activate' }}
+          </button>
+        </form>
+
+        <!-- Edit -->
+        <a href="/notifications/{{ sub.id }}/edit" role="button" class="outline"
+           style="padding:0.3rem 0.6rem; font-size:0.8rem; margin:0;"
+           title="Edit">
+          ✏️
+        </a>
+
+        <!-- Delete -->
+        <form method="post" action="/notifications/{{ sub.id }}/delete" style="margin:0;"
+              onsubmit="return confirm('Delete this alert?')">
+          <button type="submit" class="outline secondary"
+                  style="padding:0.3rem 0.6rem; font-size:0.8rem; margin:0;"
+                  title="Delete">
+            🗑️
+          </button>
+        </form>
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</div>
 {% else %}
-<p class="text-muted">No alerts set up yet. Create one to get notified when a court opens up.</p>
+<article style="text-align:center; padding:2rem;">
+  <h3>No alerts yet</h3>
+  <p class="text-muted">Create an alert to get notified when a court slot becomes available.</p>
+  <a href="/notifications/new" role="button">+ Create your first alert</a>
+</article>
 {% endif %}

@@ -63,6 +63,25 @@ def _build_time_rows(
     return list(rows.items())
 
 
+def _get_email_from_session(session: str | None) -> str | None:
+    """Extract email from session cookie (non-throwing)."""
+    from app.dependencies import decode_session_email
+    return decode_session_email(session)
+
+
+def _require_email(session: str | None) -> str:
+    """Extract email or redirect to login."""
+    email = _get_email_from_session(session)
+    if not email:
+        raise _LoginRequired()
+    return email
+
+
+class _LoginRequired(Exception):
+    """Raised when a page requires authentication."""
+    pass
+
+
 # ── Surface / court type options ──────────────────────────────────────────
 
 _SURFACE_TYPES = ["hard", "clay", "carpet", "grass", "artificial_grass"]
@@ -183,9 +202,7 @@ async def partial_subscription_list(
     session: str | None = Cookie(None),
 ):
     """Return the subscriptions table partial (for HTMX swap)."""
-    from app.dependencies import decode_session_email
-
-    email = decode_session_email(session)
+    email = _get_email_from_session(session)
     if not email:
         return HTMLResponse(
             '<p class="text-muted">Please <a href="/login">log in</a> to see your alerts.</p>'
@@ -197,6 +214,26 @@ async def partial_subscription_list(
     return templates.TemplateResponse(
         "partials/subscription_list.html",
         {"request": request, "subscriptions": subs},
+    )
+
+
+@router.get("/partials/club-courts", response_class=HTMLResponse)
+async def partial_club_courts(
+    request: Request,
+    club_id: str = Query(""),
+):
+    """Return court checkboxes for a given club (HTMX partial)."""
+    if not club_id:
+        return HTMLResponse("")
+
+    service = registry.get_service(club_id)
+    if service is None:
+        return HTMLResponse('<p class="text-muted">Club not found.</p>')
+
+    courts = await service.list_courts()
+    return templates.TemplateResponse(
+        "partials/court_picker.html",
+        {"request": request, "courts": courts, "selected_court_ids": []},
     )
 
 
@@ -221,12 +258,24 @@ async def notification_form(
 ):
     """New notification subscription form."""
     clubs = registry.list_clubs()
+    # Pre-load courts if a club is pre-selected
+    courts = []
+    if club_id:
+        service = registry.get_service(club_id)
+        if service:
+            courts = await service.list_courts()
+
     return templates.TemplateResponse(
         "pages/notification_form.html",
         {
             "request": request,
             "clubs": clubs,
+            "courts": courts,
             "selected_club_id": club_id,
+            "surface_types": _SURFACE_TYPES,
+            "court_types": _COURT_TYPES,
+            "editing": False,
+            "sub": None,
         },
     )
 
@@ -242,16 +291,23 @@ async def create_notification_page(
     is_recurring: str = Form("false"),
     days_of_week: list[str] | None = Form(None),
     specific_dates: str | None = Form(None),
+    court_ids: list[str] | None = Form(None),
+    surface_types: list[str] | None = Form(None),
+    court_types: list[str] | None = Form(None),
     session: str | None = Cookie(None),
 ):
     """Handle form submission: create a notification via the DB."""
-    from app.dependencies import decode_session_email
-
-    email = decode_session_email(session)
+    email = _get_email_from_session(session)
     if not email:
         return RedirectResponse("/login", status_code=303)
 
     from app import db
+
+    # Resolve club name
+    club_name = None
+    service = registry.get_service(club_id)
+    if service:
+        club_name = service.get_club().name
 
     # Parse specific dates
     parsed_dates = None
@@ -265,14 +321,146 @@ async def create_notification_page(
     await db.create_subscription(
         user_email=email,
         club_id=club_id,
+        club_name=club_name,
         notify_on_statuses=notify_on_statuses,
         is_recurring=is_recurring == "true",
         time_from=time_from if time_from else None,
         time_to=time_to if time_to else None,
         days_of_week=days_of_week,
         specific_dates=parsed_dates,
+        court_ids=court_ids,
+        surface_types=surface_types,
+        court_types=court_types,
     )
 
+    return RedirectResponse("/notifications", status_code=303)
+
+
+@router.get("/notifications/{notification_id}/edit", response_class=HTMLResponse)
+async def edit_notification_form(
+    request: Request,
+    notification_id: str,
+    session: str | None = Cookie(None),
+):
+    """Edit an existing notification subscription."""
+    email = _get_email_from_session(session)
+    if not email:
+        return RedirectResponse("/login", status_code=303)
+
+    from app import db
+
+    sub = await db.get_subscription(notification_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    clubs = registry.list_clubs()
+
+    # Load courts for the current club
+    courts = []
+    service = registry.get_service(sub.club_id)
+    if service:
+        courts = await service.list_courts()
+
+    return templates.TemplateResponse(
+        "pages/notification_form.html",
+        {
+            "request": request,
+            "clubs": clubs,
+            "courts": courts,
+            "selected_club_id": sub.club_id,
+            "surface_types": _SURFACE_TYPES,
+            "court_types": _COURT_TYPES,
+            "editing": True,
+            "sub": sub,
+        },
+    )
+
+
+@router.post("/notifications/{notification_id}/edit")
+async def update_notification_page(
+    request: Request,
+    notification_id: str,
+    club_id: str = Form(...),
+    notify_on_statuses: list[str] = Form(...),
+    time_from: str | None = Form(None),
+    time_to: str | None = Form(None),
+    is_recurring: str = Form("false"),
+    days_of_week: list[str] | None = Form(None),
+    specific_dates: str | None = Form(None),
+    court_ids: list[str] | None = Form(None),
+    surface_types: list[str] | None = Form(None),
+    court_types: list[str] | None = Form(None),
+    session: str | None = Cookie(None),
+):
+    """Handle edit form submission: update a notification via the DB."""
+    email = _get_email_from_session(session)
+    if not email:
+        return RedirectResponse("/login", status_code=303)
+
+    from app import db
+
+    existing = await db.get_subscription(notification_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Parse specific dates
+    parsed_dates = None
+    if specific_dates:
+        parsed_dates = [
+            d.strip()
+            for d in specific_dates.split(",")
+            if d.strip()
+        ]
+
+    await db.update_subscription(
+        notification_id,
+        club_id=club_id,
+        notify_on_statuses=notify_on_statuses,
+        is_recurring=is_recurring == "true",
+        time_from=time_from if time_from else None,
+        time_to=time_to if time_to else None,
+        days_of_week=days_of_week,
+        specific_dates=parsed_dates,
+        court_ids=court_ids,
+        surface_types=surface_types,
+        court_types=court_types,
+    )
+
+    return RedirectResponse("/notifications", status_code=303)
+
+
+@router.post("/notifications/{notification_id}/toggle")
+async def toggle_notification_page(
+    request: Request,
+    notification_id: str,
+    active: str = Form("true"),
+    session: str | None = Cookie(None),
+):
+    """Toggle active/inactive for a notification (form POST)."""
+    email = _get_email_from_session(session)
+    if not email:
+        return RedirectResponse("/login", status_code=303)
+
+    from app import db
+
+    await db.toggle_subscription(notification_id, active == "true")
+    return RedirectResponse("/notifications", status_code=303)
+
+
+@router.post("/notifications/{notification_id}/delete")
+async def delete_notification_page(
+    request: Request,
+    notification_id: str,
+    session: str | None = Cookie(None),
+):
+    """Delete a notification subscription (form POST)."""
+    email = _get_email_from_session(session)
+    if not email:
+        return RedirectResponse("/login", status_code=303)
+
+    from app import db
+
+    await db.delete_subscription(notification_id)
     return RedirectResponse("/notifications", status_code=303)
 
 

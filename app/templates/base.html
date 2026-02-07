@@ -169,6 +169,70 @@
       opacity: 0.7;
     }
 
+    /* ── Court picker ─────────────────────────────────────── */
+    .court-picker-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      max-height: 260px;
+      overflow-y: auto;
+      padding: 0.3rem;
+      border: 1px solid var(--pico-form-element-border-color);
+      border-radius: var(--pico-border-radius);
+      background: var(--pico-form-element-background-color);
+    }
+    .court-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.3rem 0.6rem;
+      margin: 0;
+      border: 1px solid var(--pico-form-element-border-color);
+      border-radius: 2rem;
+      background: var(--pico-card-background-color);
+      cursor: pointer;
+      font-size: 0.82rem;
+      line-height: 1.3;
+      white-space: nowrap;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .court-chip:hover {
+      border-color: var(--pico-primary);
+    }
+    .court-chip:has(input:checked) {
+      border-color: var(--pico-primary);
+      background: var(--slot-free-bg);
+    }
+    .court-chip input[type="checkbox"] {
+      margin: 0;
+      width: 1rem;
+      height: 1rem;
+      flex-shrink: 0;
+    }
+    .court-chip-body {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+    }
+    .court-chip-body strong {
+      font-weight: 600;
+    }
+    .court-chip-body small {
+      opacity: 0.55;
+      font-size: 0.75rem;
+    }
+
+    @media (max-width: 576px) {
+      .court-picker-grid {
+        max-height: 200px;
+      }
+      .court-chip {
+        font-size: 0.78rem;
+        padding: 0.25rem 0.5rem;
+      }
+    }
+
     /* ── Misc ───────────────────────────────────────────── */
     .flash {
       padding: 0.8rem 1rem;
@@ -180,6 +244,7 @@
 
     .text-muted { opacity: 0.6; }
     .mb-0 { margin-bottom: 0; }
+    .sub-inactive { opacity: 0.6; }
   </style>
 </head>
 <body>
