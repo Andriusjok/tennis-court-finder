@@ -54,6 +54,14 @@ class MockClubService:
                 return court
         return None
 
+    # ── Lifecycle (no-op for tests) ───────────────────────────────────
+
+    async def start(self) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
     # ── Time slots ─────────────────────────────────────────────────────
 
     async def list_time_slots(

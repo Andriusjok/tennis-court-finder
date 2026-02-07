@@ -2,6 +2,7 @@
 Shared FastAPI dependencies – authentication, pagination, etc.
 """
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Cookie, Depends, HTTPException, Query, status
@@ -32,13 +33,10 @@ class PaginationParams:
 # ── Authentication (mock) ─────────────────────────────────────────────────
 
 # TODO: Replace with real JWT validation once auth is implemented.
-# For now, this is a mock that accepts any value in the "session" cookie
-# and returns a fake user.
+# For now we parse the email out of the mock session cookie
+# ("mock-jwt-for-{email}") so each login gets its own subscriptions.
 
-_MOCK_USER = UserInfo(
-    email="player@example.com",
-    created_at="2026-01-01T00:00:00Z",
-)
+_MOCK_COOKIE_PREFIX = "mock-jwt-for-"
 
 
 async def get_current_user(
@@ -47,16 +45,25 @@ async def get_current_user(
     """
     Extract and validate the JWT from the session cookie.
 
-    Currently a **mock** – any non-empty cookie value is accepted and a
-    static test user is returned.  Replace with real JWT decoding later.
+    Currently a **mock** – the email is parsed from the cookie value.
+    Replace with real JWT decoding later.
     """
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required. Please log in via /api/auth/verify-otp",
         )
-    # Mock: accept any token
-    return _MOCK_USER
+
+    # Extract email from "mock-jwt-for-{email}"
+    if session.startswith(_MOCK_COOKIE_PREFIX):
+        email = session[len(_MOCK_COOKIE_PREFIX):]
+    else:
+        email = "player@example.com"
+
+    return UserInfo(
+        email=email,
+        created_at=datetime.now(timezone.utc),
+    )
 
 
 # Type alias for use as a dependency

@@ -1,8 +1,13 @@
 """
 Shared test fixtures.
 
-Provides a FastAPI TestClient wired to mock services so unit tests
-never hit external APIs.
+Provides a FastAPI TestClient wired to:
+  • mock club services (no external HTTP)
+  • a temporary SQLite database (via app lifespan)
+  • a no-op notifier
+
+The `client` fixture runs the full lifespan (DB init / shutdown) so that
+notification endpoints backed by SQLite work correctly in tests.
 """
 
 from __future__ import annotations
@@ -12,67 +17,103 @@ from fastapi.testclient import TestClient
 
 from app.dependencies import get_current_user
 from app.main import app
-from app.services.registry import ClubRegistry, registry
+from app.services.registry import ClubRegistry
 from tests.mocks.models import MOCK_CLUB, MOCK_CLUB_2, MOCK_USER
 from tests.mocks.services import MockClubService
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+
+class _NoopNotifier:
+    """Drop-in replacement for SlotNotifier that does nothing."""
+
+    async def start(self) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
 
 @pytest.fixture()
-def mock_registry(monkeypatch: pytest.MonkeyPatch) -> ClubRegistry:
+def _test_env(monkeypatch, tmp_path):
     """
-    Replace the global registry with one backed by MockClubService.
-    Restores the original registry after the test.
+    Internal fixture that patches the DB path, registry, and notifier
+    so that the app lifespan runs cleanly against a temp database and
+    mock services.
     """
+    # ── Temp database ─────────────────────────────────────────────────
+    import app.db as db_mod
+
+    monkeypatch.setattr(db_mod, "DB_PATH", str(tmp_path / "test.db"))
+
+    # ── Mock club registry ────────────────────────────────────────────
     test_registry = ClubRegistry()
 
-    # Register mock services
-    mock_service = MockClubService(club=MOCK_CLUB)
-    test_registry._services[MOCK_CLUB.id] = mock_service
+    svc1 = MockClubService(club=MOCK_CLUB)
+    test_registry._services[MOCK_CLUB.id] = svc1
     test_registry._clients = []
 
-    mock_service_2 = MockClubService(club=MOCK_CLUB_2, courts=[], time_slots=[])
-    test_registry._services[MOCK_CLUB_2.id] = mock_service_2
+    svc2 = MockClubService(club=MOCK_CLUB_2, courts=[], time_slots=[])
+    test_registry._services[MOCK_CLUB_2.id] = svc2
 
-    # Monkey-patch the module-level singleton
-    import app.services.registry as reg_mod
+    # Prevent the lifespan from registering real services
+    test_registry.register_seb_arena = lambda: None  # type: ignore[assignment]
 
-    monkeypatch.setattr(reg_mod, "registry", test_registry)
+    # Patch everywhere `registry` was imported
+    for mod_path in (
+        "app.services.registry",
+        "app.main",
+        "app.routers.clubs",
+        "app.routers.courts",
+        "app.routers.time_slots",
+        "app.routers.pages",
+        "app.services.notifier",
+    ):
+        monkeypatch.setattr(f"{mod_path}.registry", test_registry)
 
-    # Also patch the already-imported references in routers
-    import app.routers.clubs as clubs_mod
-    import app.routers.courts as courts_mod
-    import app.routers.time_slots as ts_mod
-
-    monkeypatch.setattr(clubs_mod, "registry", test_registry)
-    monkeypatch.setattr(courts_mod, "registry", test_registry)
-    monkeypatch.setattr(ts_mod, "registry", test_registry)
+    # ── No-op notifier ────────────────────────────────────────────────
+    monkeypatch.setattr("app.main.notifier", _NoopNotifier())
 
     return test_registry
 
 
 @pytest.fixture()
-def client(mock_registry: ClubRegistry) -> TestClient:
+def mock_registry(_test_env) -> ClubRegistry:
+    """Public alias for tests that reference mock_registry directly."""
+    return _test_env
+
+
+@pytest.fixture()
+def client(_test_env: ClubRegistry) -> TestClient:
     """
-    FastAPI TestClient with mock services and no auth requirement.
+    FastAPI TestClient with mock services, temp DB, and auth bypassed.
+
+    Uses a context manager so the lifespan runs (DB init/shutdown).
     """
-    # Override auth dependency to always return mock user
     async def _mock_current_user():
         return MOCK_USER
 
     app.dependency_overrides[get_current_user] = _mock_current_user
-    yield TestClient(app, raise_server_exceptions=False)
+
+    with TestClient(app, raise_server_exceptions=False) as tc:
+        yield tc
+
     app.dependency_overrides.clear()
 
 
 @pytest.fixture()
-def unauthed_client(mock_registry: ClubRegistry) -> TestClient:
+def unauthed_client(_test_env: ClubRegistry) -> TestClient:
     """
-    FastAPI TestClient without auth overrides — requests will be rejected
-    unless a session cookie is provided.
+    TestClient without auth overrides — requests are rejected unless
+    a session cookie is provided.
     """
     app.dependency_overrides.clear()
-    yield TestClient(app, raise_server_exceptions=False)
+
+    with TestClient(app, raise_server_exceptions=False) as tc:
+        yield tc
+
     app.dependency_overrides.clear()

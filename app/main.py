@@ -13,7 +13,9 @@ import yaml
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import db
 from app.routers import auth, clubs, courts, health, notifications, pages, time_slots
+from app.services.notifier import notifier
 from app.services.registry import registry
 
 # ── Load the hand-crafted OpenAPI spec ────────────────────────────────────
@@ -32,12 +34,16 @@ _openapi_spec = _load_openapi_spec()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: register club integrations and start background cache refresh
+    # Startup
+    await db.init_db()
     registry.register_seb_arena()
     await registry.start()
+    await notifier.start()
     yield
-    # Shutdown: stop background tasks and close HTTP clients
+    # Shutdown
+    await notifier.stop()
     await registry.stop()
+    await db.close_db()
 
 
 # ── App factory ───────────────────────────────────────────────────────────

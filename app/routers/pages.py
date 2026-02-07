@@ -187,10 +187,15 @@ async def partial_subscription_list(
             '<p class="text-muted">Please <a href="/login">log in</a> to see your alerts.</p>'
         )
 
-    # Import the in-memory mock store directly
-    from app.routers.notifications import _MOCK_SUBSCRIPTIONS
+    from app import db
+    from app.dependencies import _MOCK_COOKIE_PREFIX
 
-    subs = list(_MOCK_SUBSCRIPTIONS.values())
+    email = (
+        session[len(_MOCK_COOKIE_PREFIX):]
+        if session.startswith(_MOCK_COOKIE_PREFIX)
+        else "player@example.com"
+    )
+    subs = await db.list_subscriptions(email)
     return templates.TemplateResponse(
         "partials/subscription_list.html",
         {"request": request, "subscriptions": subs},
@@ -241,16 +246,18 @@ async def create_notification_page(
     specific_dates: str | None = Form(None),
     session: str | None = Cookie(None),
 ):
-    """Handle form submission: create a notification via the API."""
+    """Handle form submission: create a notification via the DB."""
     if not session:
         return RedirectResponse("/login", status_code=303)
 
-    from datetime import datetime, timezone
-    from uuid import uuid4
-    from app.generated.models import NotificationSubscription
-    from app.routers.notifications import _MOCK_SUBSCRIPTIONS
+    from app import db
+    from app.dependencies import _MOCK_COOKIE_PREFIX
 
-    now = datetime.now(timezone.utc)
+    email = (
+        session[len(_MOCK_COOKIE_PREFIX):]
+        if session.startswith(_MOCK_COOKIE_PREFIX)
+        else "player@example.com"
+    )
 
     # Parse specific dates
     parsed_dates = None
@@ -261,21 +268,16 @@ async def create_notification_page(
             if d.strip()
         ]
 
-    sub = NotificationSubscription(
-        id=uuid4(),
+    await db.create_subscription(
+        user_email=email,
         club_id=club_id,
-        club_name=None,
         notify_on_statuses=notify_on_statuses,
+        is_recurring=is_recurring == "true",
         time_from=time_from if time_from else None,
         time_to=time_to if time_to else None,
-        is_recurring=is_recurring == "true",
         days_of_week=days_of_week,
         specific_dates=parsed_dates,
-        active=True,
-        created_at=now,
-        updated_at=now,
     )
-    _MOCK_SUBSCRIPTIONS[sub.id] = sub
 
     return RedirectResponse("/notifications", status_code=303)
 
