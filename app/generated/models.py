@@ -11,12 +11,12 @@ from datetime import date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AnyUrl, BaseModel, EmailStr, Field, RootModel
+from pydantic import AnyUrl, BaseModel, EmailStr, Field
 
 
 class HealthResponse(BaseModel):
-    status: Annotated[str, Field(examples=['ok'])]
-    version: Annotated[str, Field(examples=['0.1.0'])]
+    status: Annotated[str, Field(examples=["ok"])]
+    version: Annotated[str, Field(examples=["0.1.0"])]
     timestamp: datetime | None = None
 
 
@@ -25,7 +25,7 @@ class MessageResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    detail: Annotated[str, Field(examples=['Resource not found'])]
+    detail: Annotated[str, Field(examples=["Resource not found"])]
 
 
 class DetailItem(BaseModel):
@@ -46,17 +46,17 @@ class PaginationMeta(BaseModel):
 
 
 class OtpRequest(BaseModel):
-    email: Annotated[EmailStr, Field(examples=['player@example.com'])]
+    email: Annotated[EmailStr, Field(examples=["player@example.com"])]
 
 
 class OtpRequestResponse(BaseModel):
-    message: Annotated[str, Field(examples=['OTP sent to your email'])]
+    message: Annotated[str, Field(examples=["OTP sent to your email"])]
     expires_in_seconds: Annotated[int, Field(examples=[300])]
 
 
 class OtpVerifyRequest(BaseModel):
-    email: Annotated[EmailStr, Field(examples=['player@example.com'])]
-    otp_code: Annotated[str, Field(examples=['482910'], max_length=6, min_length=6)]
+    email: Annotated[EmailStr, Field(examples=["player@example.com"])]
+    otp_code: Annotated[str, Field(examples=["482910"], max_length=6, min_length=6)]
 
 
 class UserInfo(BaseModel):
@@ -65,19 +65,15 @@ class UserInfo(BaseModel):
 
 
 class Club(BaseModel):
-    id: Annotated[
-        str, Field(description='URL-friendly slug identifier', examples=['seb-arena'])
-    ]
-    name: Annotated[str, Field(examples=['City Tennis Club'])]
-    address: Annotated[str, Field(examples=['123 Racket Lane'])]
-    city: Annotated[str, Field(examples=['Vilnius'])]
-    phone: Annotated[str | None, Field(examples=['+37060000000'])] = None
-    website: Annotated[AnyUrl | None, Field(examples=['https://citytennisclub.lt'])] = (
-        None
-    )
+    id: Annotated[str, Field(description="URL-friendly slug identifier", examples=["seb-arena"])]
+    name: Annotated[str, Field(examples=["City Tennis Club"])]
+    address: Annotated[str, Field(examples=["123 Racket Lane"])]
+    city: Annotated[str, Field(examples=["Vilnius"])]
+    phone: Annotated[str | None, Field(examples=["+37060000000"])] = None
+    website: Annotated[AnyUrl | None, Field(examples=["https://citytennisclub.lt"])] = None
     image_url: AnyUrl | None = None
     courts_count: Annotated[
-        int | None, Field(description='Number of courts at this club', examples=[6])
+        int | None, Field(description="Number of courts at this club", examples=[6])
     ] = None
 
 
@@ -88,55 +84,49 @@ class ClubListResponse(BaseModel):
 
 class Court(BaseModel):
     id: UUID
-    club_id: Annotated[
-        str, Field(description='Slug of the parent club', examples=['seb-arena'])
-    ]
-    name: Annotated[str, Field(examples=['Court 1'])]
+    club_id: Annotated[str, Field(description="Slug of the parent club", examples=["seb-arena"])]
+    name: Annotated[str, Field(examples=["Court 1"])]
     surface_type: Annotated[
-        Literal['hard', 'clay', 'carpet', 'grass', 'artificial_grass'],
-        Field(description='Court surface material'),
+        Literal["hard", "clay", "carpet", "grass", "artificial_grass"],
+        Field(description="Court surface material"),
     ]
     court_type: Annotated[
-        Literal['indoor', 'outdoor'],
-        Field(description='Whether the court is indoors or outdoors'),
+        Literal["indoor", "outdoor"],
+        Field(description="Whether the court is indoors or outdoors"),
     ]
-    description: Annotated[
-        str | None, Field(examples=['Main show court with floodlights'])
-    ] = None
+    description: Annotated[str | None, Field(examples=["Main show court with floodlights"])] = None
 
 
 class TimeSlot(BaseModel):
     id: UUID
     court_id: UUID
-    club_id: Annotated[
-        str, Field(description='Slug of the parent club', examples=['seb-arena'])
-    ]
+    club_id: Annotated[str, Field(description="Slug of the parent club", examples=["seb-arena"])]
     court_name: Annotated[
         str,
         Field(
-            description='Denormalized court name for display convenience',
-            examples=['Court 1'],
+            description="Denormalized court name for display convenience",
+            examples=["Court 1"],
         ),
     ]
     surface_type: Annotated[
-        Literal['hard', 'clay', 'carpet', 'grass', 'artificial_grass'] | None,
-        Field(description='Court surface material'),
+        Literal["hard", "clay", "carpet", "grass", "artificial_grass"] | None,
+        Field(description="Court surface material"),
     ] = None
     court_type: Annotated[
-        Literal['indoor', 'outdoor'] | None,
-        Field(description='Whether the court is indoors or outdoors'),
+        Literal["indoor", "outdoor"] | None,
+        Field(description="Whether the court is indoors or outdoors"),
     ] = None
     start_time: datetime
     end_time: datetime
     duration_minutes: Annotated[int | None, Field(examples=[60])] = None
     status: Annotated[
-        Literal['free', 'for_sale', 'booked'],
+        Literal["free", "for_sale", "booked"],
         Field(
-            description='Availability status of a time slot:\n- **free** – available for booking\n- **for_sale** – a previously booked slot released for resale\n- **booked** – currently reserved\n'
+            description="Availability status of a time slot:\n- **free** – available for booking\n- **for_sale** – a previously booked slot released for resale\n- **booked** – currently reserved\n"
         ),
     ]
     price: Annotated[float | None, Field(examples=[25.0])] = None
-    currency: Annotated[str | None, Field(examples=['EUR'])] = None
+    currency: Annotated[str | None, Field(examples=["EUR"])] = None
 
 
 class TimeSlotListResponse(BaseModel):
@@ -147,127 +137,109 @@ class TimeSlotListResponse(BaseModel):
 class NotificationSubscription(BaseModel):
     id: UUID
     club_id: Annotated[
-        str, Field(description='Slug of the club being watched', examples=['seb-arena'])
+        str, Field(description="Slug of the club being watched", examples=["seb-arena"])
     ]
     club_name: Annotated[
         str | None,
         Field(
-            description='Denormalized club name for display',
-            examples=['City Tennis Club'],
+            description="Denormalized club name for display",
+            examples=["City Tennis Club"],
         ),
     ] = None
     court_ids: Annotated[
         list[UUID] | None,
-        Field(
-            description='Specific courts to watch (null or empty = all courts in the club)'
-        ),
+        Field(description="Specific courts to watch (null or empty = all courts in the club)"),
     ] = None
     surface_types: Annotated[
-        list[Literal['hard', 'clay', 'carpet', 'grass', 'artificial_grass']] | None,
-        Field(description='Filter by surface type (null = any)'),
+        list[Literal["hard", "clay", "carpet", "grass", "artificial_grass"]] | None,
+        Field(description="Filter by surface type (null = any)"),
     ] = None
     court_types: Annotated[
-        list[Literal['indoor', 'outdoor']] | None,
-        Field(description='Filter by indoor/outdoor (null = any)'),
+        list[Literal["indoor", "outdoor"]] | None,
+        Field(description="Filter by indoor/outdoor (null = any)"),
     ] = None
     notify_on_statuses: Annotated[
-        list[Literal['free', 'for_sale', 'booked']],
+        list[Literal["free", "for_sale", "booked"]],
         Field(
-            description='Statuses that trigger a notification (e.g. [free, for_sale])',
+            description="Statuses that trigger a notification (e.g. [free, for_sale])",
             min_length=1,
         ),
     ]
     time_from: Annotated[
         str | None,
         Field(
-            description='Earliest time of day to watch (HH:MM, 24h)',
-            examples=['18:00'],
-            pattern='^\\d{2}:\\d{2}$',
+            description="Earliest time of day to watch (HH:MM, 24h)",
+            examples=["18:00"],
+            pattern="^\\d{2}:\\d{2}$",
         ),
     ] = None
     time_to: Annotated[
         str | None,
         Field(
-            description='Latest time of day to watch (HH:MM, 24h)',
-            examples=['21:00'],
-            pattern='^\\d{2}:\\d{2}$',
+            description="Latest time of day to watch (HH:MM, 24h)",
+            examples=["21:00"],
+            pattern="^\\d{2}:\\d{2}$",
         ),
     ] = None
-    is_recurring: Annotated[
-        bool, Field(description='Whether this is a weekly recurring watch')
-    ]
+    is_recurring: Annotated[bool, Field(description="Whether this is a weekly recurring watch")]
     days_of_week: Annotated[
         list[
             Literal[
-                'monday',
-                'tuesday',
-                'wednesday',
-                'thursday',
-                'friday',
-                'saturday',
-                'sunday',
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
             ]
         ]
         | None,
-        Field(
-            description='Days of the week to watch (required when is_recurring is true)'
-        ),
+        Field(description="Days of the week to watch (required when is_recurring is true)"),
     ] = None
     specific_dates: Annotated[
         list[date] | None,
-        Field(description='Specific dates to watch (used when is_recurring is false)'),
+        Field(description="Specific dates to watch (used when is_recurring is false)"),
     ] = None
     date_range_start: Annotated[
-        date | None, Field(description='Start watching from this date (inclusive)')
+        date | None, Field(description="Start watching from this date (inclusive)")
     ] = None
     date_range_end: Annotated[
-        date | None, Field(description='Stop watching after this date (inclusive)')
+        date | None, Field(description="Stop watching after this date (inclusive)")
     ] = None
-    active: Annotated[
-        bool, Field(description='Whether this subscription is currently active')
-    ]
+    active: Annotated[bool, Field(description="Whether this subscription is currently active")]
     match_count: Annotated[
         int | None,
-        Field(
-            description='Number of times this subscription has matched', examples=[5]
-        ),
+        Field(description="Number of times this subscription has matched", examples=[5]),
     ] = None
     last_notified_at: Annotated[
-        datetime | None, Field(description='When the last notification was sent')
+        datetime | None, Field(description="When the last notification was sent")
     ] = None
     created_at: datetime
     updated_at: datetime
 
 
 class NotificationSubscriptionCreate(BaseModel):
-    club_id: Annotated[
-        str, Field(description='Slug of the club to watch', examples=['seb-arena'])
-    ]
+    club_id: Annotated[str, Field(description="Slug of the club to watch", examples=["seb-arena"])]
     court_ids: list[UUID] | None = None
-    surface_types: (
-        list[Literal['hard', 'clay', 'carpet', 'grass', 'artificial_grass']] | None
-    ) = None
-    court_types: list[Literal['indoor', 'outdoor']] | None = None
-    notify_on_statuses: Annotated[
-        list[Literal['free', 'for_sale', 'booked']], Field(min_length=1)
-    ]
-    time_from: Annotated[
-        str | None, Field(examples=['18:00'], pattern='^\\d{2}:\\d{2}$')
-    ] = None
-    time_to: Annotated[
-        str | None, Field(examples=['21:00'], pattern='^\\d{2}:\\d{2}$')
-    ] = None
+    surface_types: list[Literal["hard", "clay", "carpet", "grass", "artificial_grass"]] | None = (
+        None
+    )
+    court_types: list[Literal["indoor", "outdoor"]] | None = None
+    notify_on_statuses: Annotated[list[Literal["free", "for_sale", "booked"]], Field(min_length=1)]
+    time_from: Annotated[str | None, Field(examples=["18:00"], pattern="^\\d{2}:\\d{2}$")] = None
+    time_to: Annotated[str | None, Field(examples=["21:00"], pattern="^\\d{2}:\\d{2}$")] = None
     is_recurring: bool
     days_of_week: (
         list[
             Literal[
-                'monday',
-                'tuesday',
-                'wednesday',
-                'thursday',
-                'friday',
-                'saturday',
-                'sunday',
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
             ]
         ]
         | None
@@ -278,34 +250,26 @@ class NotificationSubscriptionCreate(BaseModel):
 
 
 class NotificationSubscriptionUpdate(BaseModel):
-    club_id: Annotated[
-        str, Field(description='Slug of the club to watch', examples=['seb-arena'])
-    ]
+    club_id: Annotated[str, Field(description="Slug of the club to watch", examples=["seb-arena"])]
     court_ids: list[UUID] | None = None
-    surface_types: (
-        list[Literal['hard', 'clay', 'carpet', 'grass', 'artificial_grass']] | None
-    ) = None
-    court_types: list[Literal['indoor', 'outdoor']] | None = None
-    notify_on_statuses: Annotated[
-        list[Literal['free', 'for_sale', 'booked']], Field(min_length=1)
-    ]
-    time_from: Annotated[
-        str | None, Field(examples=['18:00'], pattern='^\\d{2}:\\d{2}$')
-    ] = None
-    time_to: Annotated[
-        str | None, Field(examples=['21:00'], pattern='^\\d{2}:\\d{2}$')
-    ] = None
+    surface_types: list[Literal["hard", "clay", "carpet", "grass", "artificial_grass"]] | None = (
+        None
+    )
+    court_types: list[Literal["indoor", "outdoor"]] | None = None
+    notify_on_statuses: Annotated[list[Literal["free", "for_sale", "booked"]], Field(min_length=1)]
+    time_from: Annotated[str | None, Field(examples=["18:00"], pattern="^\\d{2}:\\d{2}$")] = None
+    time_to: Annotated[str | None, Field(examples=["21:00"], pattern="^\\d{2}:\\d{2}$")] = None
     is_recurring: bool
     days_of_week: (
         list[
             Literal[
-                'monday',
-                'tuesday',
-                'wednesday',
-                'thursday',
-                'friday',
-                'saturday',
-                'sunday',
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
             ]
         ]
         | None
@@ -316,9 +280,7 @@ class NotificationSubscriptionUpdate(BaseModel):
 
 
 class NotificationToggle(BaseModel):
-    active: Annotated[
-        bool, Field(description='Set to true to activate, false to deactivate')
-    ]
+    active: Annotated[bool, Field(description="Set to true to activate, false to deactivate")]
 
 
 class NotificationSubscriptionListResponse(BaseModel):
@@ -330,11 +292,11 @@ class NotificationLog(BaseModel):
     id: UUID
     subscription_id: UUID
     sent_at: datetime
-    channel: Annotated[Literal['email'], Field(description='Notification channel used')]
+    channel: Annotated[Literal["email"], Field(description="Notification channel used")]
     time_slot: Annotated[
-        TimeSlot, Field(description='The time slot that triggered the notification')
+        TimeSlot, Field(description="The time slot that triggered the notification")
     ]
-    status: Literal['sent', 'failed'] | None = None
+    status: Literal["sent", "failed"] | None = None
     error_message: str | None = None
 
 
@@ -344,5 +306,5 @@ class NotificationLogListResponse(BaseModel):
 
 
 class AuthResponse(BaseModel):
-    message: Annotated[str, Field(examples=['Authenticated successfully'])]
+    message: Annotated[str, Field(examples=["Authenticated successfully"])]
     user: UserInfo

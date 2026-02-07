@@ -1,62 +1,33 @@
-"""
-Caching layer for tennis club services.
-
-Wraps any TennisClubService with an in-memory cache that is periodically
-refreshed by a background task.  API requests are served from the cache
-so the external booking system is only hit once per refresh cycle.
-
-Usage::
-
-    service = SebArenaService(client)
-    cached  = CachedClubService(service, refresh_interval_seconds=60)
-    await cached.start()        # initial fetch + starts background loop
-    ...
-    await cached.stop()         # cancels background loop
-"""
-
 from __future__ import annotations
 
-import asyncio
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from app.generated.models import Club, Court, TimeSlot
+from app.services.background import BackgroundWorker
 
 logger = logging.getLogger(__name__)
 
-# How many days ahead to pre-fetch in each refresh cycle.
 _DEFAULT_FETCH_DAYS = 8
 
 
 class SlotCache:
-    """
-    Thread-safe in-memory store for courts and time slots.
-
-    All data is replaced atomically on each refresh so readers never
-    see a partially-updated state.
-    """
-
     def __init__(self) -> None:
         self._courts: list[Court] = []
         self._slots: list[TimeSlot] = []
         self._last_refresh: datetime | None = None
 
-    # ── Write ──────────────────────────────────────────────────────────
-
     def update(self, courts: list[Court], slots: list[TimeSlot]) -> None:
-        """Atomically replace the cached data."""
         self._courts = list(courts)
         self._slots = list(slots)
-        self._last_refresh = datetime.now(timezone.utc)
+        self._last_refresh = datetime.now(UTC)
         logger.info(
-            "Cache updated: %d courts, %d time slots (at %s)",
+            "Cache updated: %d courts, %d slots (at %s)",
             len(self._courts),
             len(self._slots),
             self._last_refresh.isoformat(),
         )
-
-    # ── Read ───────────────────────────────────────────────────────────
 
     @property
     def is_populated(self) -> bool:
@@ -94,10 +65,7 @@ class SlotCache:
         surface_type: str | None = None,
         court_type: str | None = None,
     ) -> list[TimeSlot]:
-        slots = self._slots
-
-        # Date range filter
-        slots = [s for s in slots if date_from <= s.start_time.date() <= date_to]
+        slots = [s for s in self._slots if date_from <= s.start_time.date() <= date_to]
 
         if court_id:
             target = UUID(court_id) if isinstance(court_id, str) else court_id
@@ -112,78 +80,32 @@ class SlotCache:
         return slots
 
 
-class CachedClubService:
-    """
-    Cache-through wrapper that implements the TennisClubService protocol.
-
-    On start, performs an initial data fetch then spawns a background
-    asyncio task that re-fetches every *refresh_interval_seconds*.
-    All reads are served from the in-memory cache.
-
-    If the cache is empty (cold start / not yet populated), reads fall
-    through to the underlying service directly.
-    """
-
+class CachedClubService(BackgroundWorker):
     def __init__(
         self,
-        delegate: object,  # anything satisfying TennisClubService protocol
+        delegate: object,
         *,
         refresh_interval_seconds: float = 60.0,
         fetch_days: int = _DEFAULT_FETCH_DAYS,
     ) -> None:
+        super().__init__(interval=refresh_interval_seconds, name="cache-refresh")
         self._delegate = delegate
         self._cache = SlotCache()
-        self._refresh_interval = refresh_interval_seconds
         self._fetch_days = fetch_days
-        self._task: asyncio.Task[None] | None = None
 
-    # ── Lifecycle ──────────────────────────────────────────────────────
-
-    async def start(self) -> None:
-        """Perform the initial cache fill and start the background loop."""
+    async def _on_start(self) -> None:
         await self._refresh()
-        self._task = asyncio.create_task(self._refresh_loop(), name="cache-refresh")
-        logger.info(
-            "Background cache refresh started (every %ds)",
-            self._refresh_interval,
-        )
 
-    async def stop(self) -> None:
-        """Cancel the background refresh loop."""
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-            logger.info("Background cache refresh stopped")
-
-    # ── Background refresh ─────────────────────────────────────────────
-
-    async def _refresh_loop(self) -> None:
-        """Runs forever, refreshing the cache on a fixed interval."""
-        while True:
-            await asyncio.sleep(self._refresh_interval)
-            try:
-                await self._refresh()
-            except Exception:
-                logger.exception("Cache refresh failed – will retry next cycle")
+    async def _tick(self) -> None:
+        await self._refresh()
 
     async def _refresh(self) -> None:
-        """Fetch all courts + time slots from the delegate and update the cache."""
         logger.info("Refreshing cache from upstream...")
         today = date.today()
         date_to = today + timedelta(days=self._fetch_days - 1)
-
         courts = await self._delegate.list_courts()
-        slots = await self._delegate.list_time_slots(
-            date_from=today,
-            date_to=date_to,
-        )
+        slots = await self._delegate.list_time_slots(date_from=today, date_to=date_to)
         self._cache.update(courts, slots)
-
-    # ── TennisClubService protocol ─────────────────────────────────────
 
     def get_club(self) -> Club:
         return self._delegate.get_club()
@@ -195,7 +117,8 @@ class CachedClubService:
     ) -> list[Court]:
         if not self._cache.is_populated:
             return await self._delegate.list_courts(
-                surface_type=surface_type, court_type=court_type,
+                surface_type=surface_type,
+                court_type=court_type,
             )
         return self._cache.get_courts(surface_type=surface_type, court_type=court_type)
 
@@ -230,8 +153,6 @@ class CachedClubService:
             surface_type=surface_type,
             court_type=court_type,
         )
-
-    # ── Introspection ──────────────────────────────────────────────────
 
     @property
     def last_refresh(self) -> datetime | None:

@@ -27,6 +27,7 @@ slowapi = "^0.1.9"
 datamodel-code-generator = {extras = ["http"], version = ">=0.25.0"}
 pytest = ">=8.0.0"
 pytest-asyncio = ">=0.23.0"
+ruff = ">=0.8.0"
 
 [tool.poetry.scripts]
 generate = "scripts.generate:main"
@@ -35,6 +36,24 @@ generate = "scripts.generate:main"
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "E501",    # line length handled by formatter
+    "UP007",   # X | Y union syntax already used
+    "B008",    # Depends/Query/Form in defaults is standard FastAPI
+    "RUF001",  # en-dash in user-facing strings is intentional
+    "RUF002",  # en-dash in docstrings is intentional
+    "RUF003",  # en-dash in comments is intentional
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

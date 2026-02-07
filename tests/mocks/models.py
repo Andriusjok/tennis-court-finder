@@ -1,16 +1,7 @@
-"""
-Pre-built model instances for use in tests.
-
-Import individual fixtures or use the factory helpers to create
-custom variants:
-
-    from tests.mocks.models import MOCK_CLUB, make_court, make_time_slot
-"""
-
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
-from uuid import UUID, uuid5, NAMESPACE_URL
+from datetime import UTC, date, datetime, timedelta
+from uuid import UUID, uuid5
 
 from app.generated.models import (
     Club,
@@ -21,8 +12,6 @@ from app.generated.models import (
     UserInfo,
 )
 
-# ── Deterministic UUIDs ────────────────────────────────────────────────────
-# Namespace for generating stable test UUIDs
 _TEST_NS = UUID("00000000-0000-0000-0000-000000000000")
 
 
@@ -30,19 +19,15 @@ def _uuid(name: str) -> UUID:
     return uuid5(_TEST_NS, name)
 
 
-# ── Users ──────────────────────────────────────────────────────────────────
-
 MOCK_USER = UserInfo(
     email="player@example.com",
-    created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    created_at=datetime(2026, 1, 1, tzinfo=UTC),
 )
 
 MOCK_USER_2 = UserInfo(
     email="coach@example.com",
-    created_at=datetime(2026, 1, 15, tzinfo=timezone.utc),
+    created_at=datetime(2026, 1, 15, tzinfo=UTC),
 )
-
-# ── Club ───────────────────────────────────────────────────────────────────
 
 MOCK_CLUB = Club(
     id="test-club",
@@ -65,8 +50,6 @@ MOCK_CLUB_2 = Club(
     image_url=None,
     courts_count=2,
 )
-
-# ── Courts ─────────────────────────────────────────────────────────────────
 
 MOCK_COURT_HARD_INDOOR = Court(
     id=_uuid("court-1"),
@@ -97,10 +80,8 @@ MOCK_COURT_CARPET_INDOOR = Court(
 
 MOCK_COURTS = [MOCK_COURT_HARD_INDOOR, MOCK_COURT_CLAY_OUTDOOR, MOCK_COURT_CARPET_INDOOR]
 
-# ── Time slots ─────────────────────────────────────────────────────────────
-
 _TODAY = date.today()
-_BASE_DT = datetime(_TODAY.year, _TODAY.month, _TODAY.day, 10, 0, tzinfo=timezone.utc)
+_BASE_DT = datetime(_TODAY.year, _TODAY.month, _TODAY.day, 10, 0, tzinfo=UTC)
 
 
 def make_time_slot(
@@ -109,7 +90,6 @@ def make_time_slot(
     duration_minutes: int = 60,
     status: str = "free",
 ) -> TimeSlot:
-    """Factory to create a TimeSlot with sensible defaults."""
     st = start_time or _BASE_DT
     return TimeSlot(
         id=_uuid(f"slot-{court.id}-{st.isoformat()}"),
@@ -144,8 +124,6 @@ MOCK_SLOT_CLAY = make_time_slot(
 
 MOCK_TIME_SLOTS = [MOCK_SLOT_FREE, MOCK_SLOT_BOOKED, MOCK_SLOT_FOR_SALE, MOCK_SLOT_CLAY]
 
-# ── Notification subscriptions ─────────────────────────────────────────────
-
 MOCK_NOTIFICATION_CREATE = NotificationSubscriptionCreate(
     club_id="test-club",
     notify_on_statuses=["free", "for_sale"],
@@ -167,6 +145,6 @@ MOCK_SUBSCRIPTION = NotificationSubscription(
     active=True,
     match_count=3,
     last_notified_at=None,
-    created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
-    updated_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+    created_at=datetime(2026, 2, 1, tzinfo=UTC),
+    updated_at=datetime(2026, 2, 1, tzinfo=UTC),
 )

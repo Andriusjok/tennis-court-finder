@@ -1,6 +1,6 @@
 """Tests for the /api/clubs endpoints."""
 
-from tests.mocks.models import MOCK_CLUB, MOCK_CLUB_2
+from tests.mocks.models import MOCK_CLUB
 
 
 class TestListClubs:

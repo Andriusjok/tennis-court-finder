@@ -1,15 +1,8 @@
-"""
-Server-rendered HTML pages using Jinja2 + HTMX.
-
-These routes serve the browser UI.  All data is fetched from the internal
-service layer (the same code the JSON API uses), so the HTML stays in sync
-with the REST endpoints automatically.
-"""
-
 from __future__ import annotations
 
-from datetime import date, timedelta
+import secrets
 from collections import OrderedDict
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,18 +10,19 @@ from fastapi import APIRouter, Cookie, Form, HTTPException, Query, Request, Resp
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.rate_limit import STRICT, AUTH, limiter
+from app import db
+from app.dependencies import create_session_cookie, decode_session_email
+from app.rate_limit import AUTH, STRICT, limiter
+from app.services.email import send_otp_email
 from app.services.registry import registry
-
-# ── Template engine ───────────────────────────────────────────────────────
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 router = APIRouter(tags=["pages"], include_in_schema=False)
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────
+_SURFACE_TYPES = ["hard", "clay", "carpet", "grass", "artificial_grass"]
+_COURT_TYPES = ["indoor", "outdoor"]
 
 
 def _today() -> date:
@@ -36,7 +30,6 @@ def _today() -> date:
 
 
 def _parse_date(raw: str | None) -> date:
-    """Parse a date string or return today."""
     if raw:
         try:
             return date.fromisoformat(raw)
@@ -46,14 +39,9 @@ def _parse_date(raw: str | None) -> date:
 
 
 def _build_time_rows(
-    slots: list, courts: list
+    slots: list,
+    courts: list,
 ) -> list[tuple[str, dict[str, Any]]]:
-    """
-    Pivot a flat list of time slots into rows keyed by time label,
-    each containing a dict mapping court_id → slot.
-
-    Returns a list of (time_label, {court_id: slot}) sorted by time.
-    """
     rows: dict[str, dict[str, Any]] = OrderedDict()
     for slot in slots:
         time_label = slot.start_time.strftime("%H:%M")
@@ -63,41 +51,71 @@ def _build_time_rows(
     return list(rows.items())
 
 
-def _get_email_from_session(session: str | None) -> str | None:
-    """Extract email from session cookie (non-throwing)."""
-    from app.dependencies import decode_session_email
+def _get_email(session: str | None) -> str | None:
     return decode_session_email(session)
 
 
-def _require_email(session: str | None) -> str:
-    """Extract email or redirect to login."""
-    email = _get_email_from_session(session)
-    if not email:
-        raise _LoginRequired()
-    return email
+def _parse_notification_form(
+    club_id: str,
+    notify_on_statuses: list[str],
+    time_from: str | None,
+    time_to: str | None,
+    is_recurring: str,
+    days_of_week: list[str] | None,
+    specific_dates: str | None,
+    court_ids: list[str] | None,
+    surface_types: list[str] | None,
+    court_types: list[str] | None,
+) -> dict:
+    parsed_dates = None
+    if specific_dates:
+        parsed_dates = [d.strip() for d in specific_dates.split(",") if d.strip()]
+
+    club_name = None
+    service = registry.get_service(club_id)
+    if service:
+        club_name = service.get_club().name
+
+    return dict(
+        club_id=club_id,
+        club_name=club_name,
+        notify_on_statuses=notify_on_statuses,
+        is_recurring=is_recurring == "true",
+        time_from=time_from or None,
+        time_to=time_to or None,
+        days_of_week=days_of_week,
+        specific_dates=parsed_dates,
+        court_ids=court_ids,
+        surface_types=surface_types,
+        court_types=court_types,
+    )
 
 
-class _LoginRequired(Exception):
-    """Raised when a page requires authentication."""
-    pass
+async def _fetch_slot_grid(
+    club_id: str,
+    selected: date,
+    surface_type: str | None = None,
+    court_type: str | None = None,
+) -> tuple[list, list, list[tuple[str, dict[str, Any]]]]:
+    service = registry.get_service(club_id)
+    if service is None:
+        return [], [], []
+    courts = await service.list_courts(surface_type=surface_type, court_type=court_type)
+    slots = await service.list_time_slots(
+        date_from=selected,
+        date_to=selected,
+        surface_type=surface_type,
+        court_type=court_type,
+    )
+    return courts, slots, _build_time_rows(slots, courts)
 
 
-# ── Surface / court type options ──────────────────────────────────────────
-
-_SURFACE_TYPES = ["hard", "clay", "carpet", "grass", "artificial_grass"]
-_COURT_TYPES = ["indoor", "outdoor"]
-
-
-# ══════════════════════════════════════════════════════════════════════════
-#                               PAGES
-# ══════════════════════════════════════════════════════════════════════════
+# ── Pages ──────────────────────────────────────────────────────────────────
 
 
 @router.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Landing page – list all clubs."""
     clubs = registry.list_clubs()
-    # Enrich with court counts
     enriched = []
     for club in clubs:
         svc = registry.get_service(club.id)
@@ -106,7 +124,8 @@ async def home(request: Request):
             club = club.model_copy(update={"courts_count": len(courts)})
         enriched.append(club)
     return templates.TemplateResponse(
-        "pages/home.html", {"request": request, "clubs": enriched}
+        "pages/home.html",
+        {"request": request, "clubs": enriched},
     )
 
 
@@ -118,7 +137,6 @@ async def schedule(
     surface_type: str | None = Query(None),
     court_type: str | None = Query(None),
 ):
-    """Schedule grid for a club on a given day."""
     service = registry.get_service(club_id)
     if service is None:
         raise HTTPException(status_code=404, detail=f"Club {club_id} not found")
@@ -128,17 +146,12 @@ async def schedule(
     prev_date = (selected - timedelta(days=1)).isoformat()
     next_date = (selected + timedelta(days=1)).isoformat()
 
-    # Fetch courts + slots for the selected day
-    courts = await service.list_courts(
-        surface_type=surface_type, court_type=court_type
+    courts, _slots, time_rows = await _fetch_slot_grid(
+        club_id,
+        selected,
+        surface_type,
+        court_type,
     )
-    slots = await service.list_time_slots(
-        date_from=selected,
-        date_to=selected,
-        surface_type=surface_type,
-        court_type=court_type,
-    )
-    time_rows = _build_time_rows(slots, courts)
 
     return templates.TemplateResponse(
         "pages/schedule.html",
@@ -152,17 +165,12 @@ async def schedule(
             "next_date": next_date,
             "surface_types": _SURFACE_TYPES,
             "court_types": _COURT_TYPES,
-            "filters": {
-                "surface_type": surface_type,
-                "court_type": court_type,
-            },
+            "filters": {"surface_type": surface_type, "court_type": court_type},
         },
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#                           HTMX PARTIALS
-# ══════════════════════════════════════════════════════════════════════════
+# ── HTMX Partials ─────────────────────────────────────────────────────────
 
 
 @router.get("/partials/clubs/{club_id}/slots", response_class=HTMLResponse)
@@ -173,23 +181,17 @@ async def partial_slot_grid(
     surface_type: str | None = Query(None),
     court_type: str | None = Query(None),
 ):
-    """Return just the slot grid partial (for HTMX swap)."""
     service = registry.get_service(club_id)
     if service is None:
         return HTMLResponse("<p>Club not found.</p>", status_code=404)
 
     selected = _parse_date(date)
-    courts = await service.list_courts(
-        surface_type=surface_type, court_type=court_type
+    courts, _slots, time_rows = await _fetch_slot_grid(
+        club_id,
+        selected,
+        surface_type,
+        court_type,
     )
-    slots = await service.list_time_slots(
-        date_from=selected,
-        date_to=selected,
-        surface_type=surface_type,
-        court_type=court_type,
-    )
-    time_rows = _build_time_rows(slots, courts)
-
     return templates.TemplateResponse(
         "partials/slot_grid.html",
         {"request": request, "courts": courts, "time_rows": time_rows},
@@ -201,14 +203,11 @@ async def partial_subscription_list(
     request: Request,
     session: str | None = Cookie(None),
 ):
-    """Return the subscriptions table partial (for HTMX swap)."""
-    email = _get_email_from_session(session)
+    email = _get_email(session)
     if not email:
         return HTMLResponse(
             '<p class="text-muted">Please <a href="/login">log in</a> to see your alerts.</p>'
         )
-
-    from app import db
 
     subs = await db.list_subscriptions(email)
     return templates.TemplateResponse(
@@ -222,7 +221,6 @@ async def partial_club_courts(
     request: Request,
     club_id: str = Query(""),
 ):
-    """Return court checkboxes for a given club (HTMX partial)."""
     if not club_id:
         return HTMLResponse("")
 
@@ -237,14 +235,11 @@ async def partial_club_courts(
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#                        NOTIFICATION PAGES
-# ══════════════════════════════════════════════════════════════════════════
+# ── Notification Pages ─────────────────────────────────────────────────────
 
 
 @router.get("/notifications", response_class=HTMLResponse)
 async def notifications_page(request: Request, session: str | None = Cookie(None)):
-    """My notifications page."""
     return templates.TemplateResponse(
         "pages/notifications.html",
         {"request": request, "flash": None},
@@ -256,9 +251,7 @@ async def notification_form(
     request: Request,
     club_id: str | None = Query(None),
 ):
-    """New notification subscription form."""
     clubs = registry.list_clubs()
-    # Pre-load courts if a club is pre-selected
     courts = []
     if club_id:
         service = registry.get_service(club_id)
@@ -296,43 +289,23 @@ async def create_notification_page(
     court_types: list[str] | None = Form(None),
     session: str | None = Cookie(None),
 ):
-    """Handle form submission: create a notification via the DB."""
-    email = _get_email_from_session(session)
+    email = _get_email(session)
     if not email:
         return RedirectResponse("/login", status_code=303)
 
-    from app import db
-
-    # Resolve club name
-    club_name = None
-    service = registry.get_service(club_id)
-    if service:
-        club_name = service.get_club().name
-
-    # Parse specific dates
-    parsed_dates = None
-    if specific_dates:
-        parsed_dates = [
-            d.strip()
-            for d in specific_dates.split(",")
-            if d.strip()
-        ]
-
-    await db.create_subscription(
-        user_email=email,
-        club_id=club_id,
-        club_name=club_name,
-        notify_on_statuses=notify_on_statuses,
-        is_recurring=is_recurring == "true",
-        time_from=time_from if time_from else None,
-        time_to=time_to if time_to else None,
-        days_of_week=days_of_week,
-        specific_dates=parsed_dates,
-        court_ids=court_ids,
-        surface_types=surface_types,
-        court_types=court_types,
+    form = _parse_notification_form(
+        club_id,
+        notify_on_statuses,
+        time_from,
+        time_to,
+        is_recurring,
+        days_of_week,
+        specific_dates,
+        court_ids,
+        surface_types,
+        court_types,
     )
-
+    await db.create_subscription(user_email=email, **form)
     return RedirectResponse("/notifications", status_code=303)
 
 
@@ -342,20 +315,15 @@ async def edit_notification_form(
     notification_id: str,
     session: str | None = Cookie(None),
 ):
-    """Edit an existing notification subscription."""
-    email = _get_email_from_session(session)
+    email = _get_email(session)
     if not email:
         return RedirectResponse("/login", status_code=303)
-
-    from app import db
 
     sub = await db.get_subscription(notification_id)
     if sub is None:
         raise HTTPException(status_code=404, detail="Alert not found")
 
     clubs = registry.list_clubs()
-
-    # Load courts for the current club
     courts = []
     service = registry.get_service(sub.club_id)
     if service:
@@ -392,40 +360,28 @@ async def update_notification_page(
     court_types: list[str] | None = Form(None),
     session: str | None = Cookie(None),
 ):
-    """Handle edit form submission: update a notification via the DB."""
-    email = _get_email_from_session(session)
+    email = _get_email(session)
     if not email:
         return RedirectResponse("/login", status_code=303)
-
-    from app import db
 
     existing = await db.get_subscription(notification_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="Alert not found")
 
-    # Parse specific dates
-    parsed_dates = None
-    if specific_dates:
-        parsed_dates = [
-            d.strip()
-            for d in specific_dates.split(",")
-            if d.strip()
-        ]
-
-    await db.update_subscription(
-        notification_id,
-        club_id=club_id,
-        notify_on_statuses=notify_on_statuses,
-        is_recurring=is_recurring == "true",
-        time_from=time_from if time_from else None,
-        time_to=time_to if time_to else None,
-        days_of_week=days_of_week,
-        specific_dates=parsed_dates,
-        court_ids=court_ids,
-        surface_types=surface_types,
-        court_types=court_types,
+    form = _parse_notification_form(
+        club_id,
+        notify_on_statuses,
+        time_from,
+        time_to,
+        is_recurring,
+        days_of_week,
+        specific_dates,
+        court_ids,
+        surface_types,
+        court_types,
     )
-
+    form.pop("club_name", None)
+    await db.update_subscription(notification_id, **form)
     return RedirectResponse("/notifications", status_code=303)
 
 
@@ -436,12 +392,9 @@ async def toggle_notification_page(
     active: str = Form("true"),
     session: str | None = Cookie(None),
 ):
-    """Toggle active/inactive for a notification (form POST)."""
-    email = _get_email_from_session(session)
+    email = _get_email(session)
     if not email:
         return RedirectResponse("/login", status_code=303)
-
-    from app import db
 
     await db.toggle_subscription(notification_id, active == "true")
     return RedirectResponse("/notifications", status_code=303)
@@ -453,25 +406,19 @@ async def delete_notification_page(
     notification_id: str,
     session: str | None = Cookie(None),
 ):
-    """Delete a notification subscription (form POST)."""
-    email = _get_email_from_session(session)
+    email = _get_email(session)
     if not email:
         return RedirectResponse("/login", status_code=303)
-
-    from app import db
 
     await db.delete_subscription(notification_id)
     return RedirectResponse("/notifications", status_code=303)
 
 
-# ══════════════════════════════════════════════════════════════════════════
-#                            LOGIN PAGES
-# ══════════════════════════════════════════════════════════════════════════
+# ── Login Pages ────────────────────────────────────────────────────────────
 
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    """Login page – email entry step."""
     return templates.TemplateResponse(
         "pages/login.html",
         {"request": request, "step": "email", "flash": None},
@@ -484,11 +431,6 @@ async def login_submit_email(
     request: Request,
     email: str = Form(...),
 ):
-    """Handle email form → generate OTP and show OTP entry step."""
-    import secrets
-    from app import db
-    from app.services.email import send_otp_email
-
     otp_code = f"{secrets.randbelow(1_000_000):06d}"
     await db.create_otp(email, otp_code, ttl_seconds=300)
     await send_otp_email(email, otp_code)
@@ -512,11 +454,6 @@ async def login_verify_otp(
     email: str = Form(...),
     otp_code: str = Form(...),
 ):
-    """Verify OTP and set session cookie with a real JWT."""
-    from app import db
-    from app.routers.auth import _create_jwt
-    from app.config import ENVIRONMENT, JWT_EXPIRY_DAYS
-
     valid = await db.verify_otp(email, otp_code)
     if not valid:
         return templates.TemplateResponse(
@@ -529,14 +466,6 @@ async def login_verify_otp(
             },
         )
 
-    token = _create_jwt(email)
     redirect = RedirectResponse("/notifications", status_code=303)
-    redirect.set_cookie(
-        key="session",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=ENVIRONMENT == "production",
-        max_age=JWT_EXPIRY_DAYS * 86400,
-    )
+    create_session_cookie(redirect, email)
     return redirect

@@ -1,32 +1,24 @@
-"""
-Shared FastAPI dependencies – authentication, pagination, etc.
-"""
-
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import jwt
-from fastapi import Cookie, Depends, HTTPException, Query, status
+from fastapi import Cookie, Depends, HTTPException, Query, Response, status
 
-from app.config import JWT_ALGORITHM, JWT_SECRET
-from app.generated.models import UserInfo
+from app.config import ENVIRONMENT, JWT_ALGORITHM, JWT_EXPIRY_DAYS, JWT_SECRET
+from app.generated.models import PaginationMeta, UserInfo
 
 logger = logging.getLogger(__name__)
 
 
-# ── Pagination ────────────────────────────────────────────────────────────
+# ── Pagination ─────────────────────────────────────────────────────────────
 
 
 class PaginationParams:
-    """Common pagination query parameters."""
-
     def __init__(
         self,
         page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
-        page_size: Annotated[
-            int, Query(ge=1, le=100, description="Items per page")
-        ] = 20,
+        page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 20,
     ):
         self.page = page
         self.page_size = page_size
@@ -36,16 +28,47 @@ class PaginationParams:
         return (self.page - 1) * self.page_size
 
 
-# ── JWT helpers ───────────────────────────────────────────────────────────
+def paginate(items: list, pagination: PaginationParams, response_cls: type):
+    total = len(items)
+    start = pagination.offset
+    end = start + pagination.page_size
+    return response_cls(
+        items=items[start:end],
+        meta=PaginationMeta(
+            page=pagination.page,
+            page_size=pagination.page_size,
+            total_items=total,
+            total_pages=max(1, -(-total // pagination.page_size)),
+        ),
+    )
+
+
+# ── JWT / Session ──────────────────────────────────────────────────────────
+
+
+def create_jwt(email: str) -> str:
+    now = datetime.now(UTC)
+    payload = {
+        "sub": email,
+        "iat": now,
+        "exp": now + timedelta(days=JWT_EXPIRY_DAYS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def create_session_cookie(response: Response, email: str) -> None:
+    token = create_jwt(email)
+    response.set_cookie(
+        key="session",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=ENVIRONMENT == "production",
+        max_age=JWT_EXPIRY_DAYS * 86400,
+    )
 
 
 def decode_session_email(session: str | None) -> str | None:
-    """
-    Decode the session JWT and return the email, or None if invalid/absent.
-
-    This is a non-throwing helper for code paths that should degrade
-    gracefully when the user is not logged in (e.g. page rendering).
-    """
     if not session:
         return None
     try:
@@ -55,17 +78,9 @@ def decode_session_email(session: str | None) -> str | None:
         return None
 
 
-# ── Authentication dependency ─────────────────────────────────────────────
-
-
 async def get_current_user(
     session: Annotated[str | None, Cookie()] = None,
 ) -> UserInfo:
-    """
-    Extract and validate the JWT from the session cookie.
-
-    Raises 401 if the cookie is missing or the token is invalid/expired.
-    """
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -78,12 +93,12 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired. Please log in again.",
-        )
+        ) from None
     except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session. Please log in again.",
-        )
+        ) from None
 
     email: str | None = payload.get("sub")
     if not email:
@@ -94,9 +109,8 @@ async def get_current_user(
 
     return UserInfo(
         email=email,
-        created_at=datetime.fromtimestamp(payload.get("iat", 0), tz=timezone.utc),
+        created_at=datetime.fromtimestamp(payload.get("iat", 0), tz=UTC),
     )
 
 
-# Type alias for use as a dependency
 CurrentUser = Annotated[UserInfo, Depends(get_current_user)]

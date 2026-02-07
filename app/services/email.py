@@ -1,10 +1,3 @@
-"""
-Email service — sends notification emails via SMTP.
-
-In development (no SMTP configured), emails are printed to the console
-so you can see what *would* be sent without configuring a mail server.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -25,29 +18,49 @@ from app.generated.models import TimeSlot
 logger = logging.getLogger(__name__)
 
 
-def _build_slot_summary(slot: TimeSlot) -> str:
-    """One-line human-readable summary of a time slot."""
+async def _send_email(to: str, subject: str, plain: str, html: str) -> None:
+    import aiosmtplib
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = SMTP_FROM_EMAIL
+    msg["To"] = to
+    msg.attach(MIMEText(plain, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=SMTP_HOST,
+            port=SMTP_PORT,
+            username=SMTP_USERNAME,
+            password=SMTP_PASSWORD,
+            start_tls=SMTP_USE_TLS,
+        )
+        logger.info("Email sent to %s", to)
+    except Exception:
+        logger.exception("Failed to send email to %s", to)
+        raise
+
+
+def _slot_summary(slot: TimeSlot) -> str:
     day = slot.start_time.strftime("%a %d %b")
     time = f"{slot.start_time.strftime('%H:%M')}–{slot.end_time.strftime('%H:%M')}"
     price = f" · {slot.price} {slot.currency}" if slot.price else ""
     return f"{slot.court_name} · {day} {time}{price}"
 
 
-def _build_html_body(
-    club_name: str,
-    slots: list[TimeSlot],
-) -> str:
-    """Build a simple HTML email body listing the matching slots."""
+def _notification_html(club_name: str, slots: list[TimeSlot]) -> str:
     rows = ""
     for s in slots:
         status_color = {"free": "#2ecc40", "for_sale": "#f39c12"}.get(s.status, "#999")
         rows += f"""
         <tr>
           <td>{s.court_name}</td>
-          <td>{s.start_time.strftime('%a %d %b')}</td>
-          <td>{s.start_time.strftime('%H:%M')}–{s.end_time.strftime('%H:%M')}</td>
-          <td style="color:{status_color};font-weight:bold">{s.status.replace('_', ' ')}</td>
-          <td>{f'{s.price} {s.currency}' if s.price else '–'}</td>
+          <td>{s.start_time.strftime("%a %d %b")}</td>
+          <td>{s.start_time.strftime("%H:%M")}–{s.end_time.strftime("%H:%M")}</td>
+          <td style="color:{status_color};font-weight:bold">{s.status.replace("_", " ")}</td>
+          <td>{f"{s.price} {s.currency}" if s.price else "–"}</td>
         </tr>"""
 
     return f"""
@@ -78,13 +91,8 @@ def _build_html_body(
 
 
 async def send_otp_email(to_email: str, otp_code: str) -> None:
-    """
-    Send (or log) an OTP code to the user.
-
-    If SMTP is not configured, falls back to console output.
-    """
     subject = "🎾 Tennis Court Finder — Your login code"
-    html_body = f"""
+    html = f"""
     <html>
     <body style="font-family:sans-serif;color:#333">
       <h2>🎾 Tennis Court Finder</h2>
@@ -98,39 +106,13 @@ async def send_otp_email(to_email: str, otp_code: str) -> None:
     </body>
     </html>
     """
+    plain = f"Your Tennis Court Finder login code is: {otp_code}\n\nExpires in 5 minutes."
 
     if not smtp_enabled():
-        logger.info(
-            "📧 [DEV] OTP for %s: %s  (SMTP not configured — printing to console)",
-            to_email,
-            otp_code,
-        )
+        logger.info("📧 [DEV] OTP for %s: %s", to_email, otp_code)
         return
 
-    import aiosmtplib
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = SMTP_FROM_EMAIL
-    msg["To"] = to_email
-
-    plain = f"Your Tennis Court Finder login code is: {otp_code}\n\nExpires in 5 minutes."
-    msg.attach(MIMEText(plain, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
-
-    try:
-        await aiosmtplib.send(
-            msg,
-            hostname=SMTP_HOST,
-            port=SMTP_PORT,
-            username=SMTP_USERNAME,
-            password=SMTP_PASSWORD,
-            start_tls=SMTP_USE_TLS,
-        )
-        logger.info("OTP email sent to %s", to_email)
-    except Exception:
-        logger.exception("Failed to send OTP email to %s", to_email)
-        raise
+    await _send_email(to_email, subject, plain, html)
 
 
 async def send_notification_email(
@@ -138,50 +120,18 @@ async def send_notification_email(
     club_name: str,
     matching_slots: list[TimeSlot],
 ) -> None:
-    """
-    Send (or log) a notification email about matching time slots.
-
-    If SMTP is not configured, falls back to console output.
-    """
     subject = f"🎾 {len(matching_slots)} court slot(s) available — {club_name}"
-    html_body = _build_html_body(club_name, matching_slots)
+    html = _notification_html(club_name, matching_slots)
+    plain = f"Court slots available at {club_name}:\n\n"
+    plain += "\n".join(f"• {_slot_summary(s)}" for s in matching_slots)
 
-    # ── Console fallback (dev mode) ───────────────────────────────────
     if not smtp_enabled():
         logger.info(
-            "📧 [DEV] Would send email to %s:\n"
-            "  Subject: %s\n"
-            "  Slots:\n%s",
+            "📧 [DEV] Would send to %s: %s\n%s",
             to_email,
             subject,
-            "\n".join(f"    • {_build_slot_summary(s)}" for s in matching_slots),
+            "\n".join(f"    • {_slot_summary(s)}" for s in matching_slots),
         )
         return
 
-    # ── Real SMTP send ────────────────────────────────────────────────
-    import aiosmtplib
-
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = SMTP_FROM_EMAIL
-    msg["To"] = to_email
-
-    # Plain text fallback
-    plain = f"Court slots available at {club_name}:\n\n"
-    plain += "\n".join(f"• {_build_slot_summary(s)}" for s in matching_slots)
-    msg.attach(MIMEText(plain, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
-
-    try:
-        await aiosmtplib.send(
-            msg,
-            hostname=SMTP_HOST,
-            port=SMTP_PORT,
-            username=SMTP_USERNAME,
-            password=SMTP_PASSWORD,
-            start_tls=SMTP_USE_TLS,
-        )
-        logger.info("Email sent to %s (%d slots)", to_email, len(matching_slots))
-    except Exception:
-        logger.exception("Failed to send email to %s", to_email)
-        raise
+    await _send_email(to_email, subject, plain, html)

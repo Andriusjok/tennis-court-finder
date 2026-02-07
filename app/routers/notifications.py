@@ -1,15 +1,9 @@
-"""
-Notification subscription endpoints (authenticated).
-
-All data is stored in SQLite via the app.db module.
-"""
-
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app import db
-from app.dependencies import CurrentUser, PaginationParams
+from app.dependencies import CurrentUser, PaginationParams, paginate
 from app.generated.models import (
     NotificationLogListResponse,
     NotificationSubscription,
@@ -17,13 +11,19 @@ from app.generated.models import (
     NotificationSubscriptionListResponse,
     NotificationSubscriptionUpdate,
     NotificationToggle,
-    PaginationMeta,
 )
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
-# ── CRUD ──────────────────────────────────────────────────────────────────
+async def _get_sub_or_404(notification_id: UUID) -> NotificationSubscription:
+    sub = await db.get_subscription(str(notification_id))
+    if sub is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Notification subscription {notification_id} not found",
+        )
+    return sub
 
 
 @router.get(
@@ -35,27 +35,15 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 async def list_notifications(
     current_user: CurrentUser,
     pagination: PaginationParams = Depends(PaginationParams),
-    active: bool | None = Query(None, description="Filter by active/inactive"),
-    club_id: str | None = Query(None, description="Filter by club slug"),
+    active: bool | None = Query(None),
+    club_id: str | None = Query(None),
 ) -> NotificationSubscriptionListResponse:
     subs = await db.list_subscriptions(
         current_user.email,
         active=active,
         club_id=club_id,
     )
-
-    total = len(subs)
-    start = pagination.offset
-    end = start + pagination.page_size
-    return NotificationSubscriptionListResponse(
-        items=subs[start:end],
-        meta=PaginationMeta(
-            page=pagination.page,
-            page_size=pagination.page_size,
-            total_items=total,
-            total_pages=max(1, -(-total // pagination.page_size)),
-        ),
-    )
+    return paginate(subs, pagination, NotificationSubscriptionListResponse)
 
 
 @router.post(
@@ -96,13 +84,7 @@ async def get_notification(
     notification_id: UUID,
     current_user: CurrentUser,
 ) -> NotificationSubscription:
-    sub = await db.get_subscription(str(notification_id))
-    if sub is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Notification subscription {notification_id} not found",
-        )
-    return sub
+    return await _get_sub_or_404(notification_id)
 
 
 @router.put(
@@ -116,13 +98,7 @@ async def update_notification(
     body: NotificationSubscriptionUpdate,
     current_user: CurrentUser,
 ) -> NotificationSubscription:
-    existing = await db.get_subscription(str(notification_id))
-    if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Notification subscription {notification_id} not found",
-        )
-
+    await _get_sub_or_404(notification_id)
     updated = await db.update_subscription(
         str(notification_id),
         club_id=body.club_id,
@@ -170,13 +146,7 @@ async def toggle_notification(
     body: NotificationToggle,
     current_user: CurrentUser,
 ) -> NotificationSubscription:
-    existing = await db.get_subscription(str(notification_id))
-    if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Notification subscription {notification_id} not found",
-        )
-
+    await _get_sub_or_404(notification_id)
     updated = await db.toggle_subscription(str(notification_id), body.active)
     return updated  # type: ignore[return-value]
 
@@ -192,23 +162,6 @@ async def list_notification_logs(
     current_user: CurrentUser,
     pagination: PaginationParams = Depends(PaginationParams),
 ) -> NotificationLogListResponse:
-    existing = await db.get_subscription(str(notification_id))
-    if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Notification subscription {notification_id} not found",
-        )
-
+    await _get_sub_or_404(notification_id)
     logs = await db.list_logs(str(notification_id))
-    total = len(logs)
-    start = pagination.offset
-    end = start + pagination.page_size
-    return NotificationLogListResponse(
-        items=logs[start:end],
-        meta=PaginationMeta(
-            page=pagination.page,
-            page_size=pagination.page_size,
-            total_items=total,
-            total_pages=max(1, -(-total // pagination.page_size)),
-        ),
-    )
+    return paginate(logs, pagination, NotificationLogListResponse)

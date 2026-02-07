@@ -1,5 +1,3 @@
-"""Tests for the /api/auth endpoints."""
-
 from app import db
 
 
@@ -18,7 +16,6 @@ class TestRequestOtp:
 
 class TestVerifyOtp:
     async def test_verify_valid_otp(self, client):
-        # Seed a known OTP in the database
         await db.create_otp("test@example.com", "654321", ttl_seconds=300)
 
         resp = client.post(
@@ -29,11 +26,9 @@ class TestVerifyOtp:
         data = resp.json()
         assert data["message"] == "Authenticated successfully"
         assert data["user"]["email"] == "test@example.com"
-        # Should set session cookie (now a real JWT)
         assert "session" in resp.cookies
 
     async def test_verify_invalid_otp(self, client):
-        # Seed a known OTP but try a wrong code
         await db.create_otp("test@example.com", "654321", ttl_seconds=300)
 
         resp = client.post(
@@ -50,7 +45,6 @@ class TestVerifyOtp:
         assert resp.status_code == 422
 
     async def test_otp_cannot_be_reused(self, client):
-        """An OTP can only be used once."""
         await db.create_otp("test@example.com", "111222", ttl_seconds=300)
 
         # First use → success
@@ -86,7 +80,6 @@ class TestMe:
         assert resp.status_code == 401
 
     async def test_get_me_with_real_jwt(self, unauthed_client):
-        """Full flow: request OTP → verify → call /me with JWT cookie."""
         await db.create_otp("real@example.com", "999888", ttl_seconds=300)
 
         # Verify OTP to get JWT

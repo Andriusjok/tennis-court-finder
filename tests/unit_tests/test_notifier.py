@@ -1,34 +1,28 @@
-"""Tests for the SlotNotifier matching logic."""
-
-from datetime import datetime, timezone
-from uuid import UUID
+from datetime import UTC, datetime
 
 from app.generated.models import NotificationSubscription, TimeSlot
 from app.services.notifier import SlotNotifier
 from tests.mocks.models import (
     MOCK_COURT_HARD_INDOOR,
-    MOCK_SLOT_FREE,
     _uuid,
 )
 
 
 def _make_subscription(**overrides) -> NotificationSubscription:
-    """Factory for test subscriptions."""
     defaults = dict(
         id=_uuid("sub-test"),
         club_id="test-club",
         notify_on_statuses=["free"],
         is_recurring=False,
         active=True,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     defaults.update(overrides)
     return NotificationSubscription(**defaults)
 
 
 def _make_time_slot(**overrides) -> TimeSlot:
-    """Factory for test time slots."""
     defaults = dict(
         id=_uuid("slot-test"),
         court_id=MOCK_COURT_HARD_INDOOR.id,
@@ -36,8 +30,8 @@ def _make_time_slot(**overrides) -> TimeSlot:
         court_name="Court 1",
         surface_type="hard",
         court_type="indoor",
-        start_time=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc),  # Tuesday
-        end_time=datetime(2026, 2, 10, 19, 0, tzinfo=timezone.utc),
+        start_time=datetime(2026, 2, 10, 18, 0, tzinfo=UTC),  # Tuesday
+        end_time=datetime(2026, 2, 10, 19, 0, tzinfo=UTC),
         duration_minutes=60,
         status="free",
         price=25.0,
@@ -48,8 +42,6 @@ def _make_time_slot(**overrides) -> TimeSlot:
 
 
 class TestDiff:
-    """Test the snapshot diffing logic."""
-
     def test_no_changes(self):
         prev = {_uuid("s1"): "booked", _uuid("s2"): "free"}
         curr = {_uuid("s1"): "booked", _uuid("s2"): "free"}
@@ -62,7 +54,6 @@ class TestDiff:
         assert result == {_uuid("s1"): ("booked", "free")}
 
     def test_new_slot_ignored(self):
-        """New slots (not in prev) should NOT fire — avoids noise on startup."""
         prev = {}
         curr = {_uuid("s1"): "free"}
         assert SlotNotifier._diff(prev, curr) == {}
@@ -82,8 +73,6 @@ class TestDiff:
 
 
 class TestMatchSubscription:
-    """Test subscription matching against slot transitions."""
-
     def test_basic_match(self):
         sub = _make_subscription(notify_on_statuses=["free"])
         slot = _make_time_slot()
@@ -143,7 +132,7 @@ class TestMatchSubscription:
     def test_time_range_filter(self):
         sub = _make_subscription(time_from="19:00", time_to="21:00")
         slot = _make_time_slot(
-            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc),
+            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=UTC),
         )
         transitions = {slot.id: ("booked", "free")}
         lookup = {slot.id: slot}
@@ -154,7 +143,7 @@ class TestMatchSubscription:
     def test_time_range_match(self):
         sub = _make_subscription(time_from="17:00", time_to="19:00")
         slot = _make_time_slot(
-            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc),
+            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=UTC),
         )
         transitions = {slot.id: ("booked", "free")}
         lookup = {slot.id: slot}
@@ -168,7 +157,7 @@ class TestMatchSubscription:
             days_of_week=["wednesday"],  # slot is on Tuesday
         )
         slot = _make_time_slot(
-            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc),  # Tuesday
+            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=UTC),  # Tuesday
         )
         transitions = {slot.id: ("booked", "free")}
         lookup = {slot.id: slot}
@@ -182,7 +171,7 @@ class TestMatchSubscription:
             days_of_week=["tuesday"],
         )
         slot = _make_time_slot(
-            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc),  # Tuesday
+            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=UTC),  # Tuesday
         )
         transitions = {slot.id: ("booked", "free")}
         lookup = {slot.id: slot}
@@ -195,7 +184,7 @@ class TestMatchSubscription:
             specific_dates=["2026-02-11"],  # Wednesday
         )
         slot = _make_time_slot(
-            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc),  # Tuesday
+            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=UTC),  # Tuesday
         )
         transitions = {slot.id: ("booked", "free")}
         lookup = {slot.id: slot}
@@ -211,7 +200,7 @@ class TestMatchSubscription:
             date_range_end=date(2026, 2, 28),
         )
         slot = _make_time_slot(
-            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=timezone.utc),  # Before range
+            start_time=datetime(2026, 2, 10, 18, 0, tzinfo=UTC),  # Before range
         )
         transitions = {slot.id: ("booked", "free")}
         lookup = {slot.id: slot}
@@ -220,7 +209,6 @@ class TestMatchSubscription:
         assert matched == []
 
     def test_inactive_sub_filtered_at_caller_level(self):
-        """Inactive subs are filtered by the caller, not _match_subscription."""
         sub = _make_subscription(active=False)
         slot = _make_time_slot()
         transitions = {slot.id: ("booked", "free")}
@@ -228,4 +216,4 @@ class TestMatchSubscription:
 
         # _match_subscription doesn't check active — the caller does
         matched = SlotNotifier._match_subscription(sub, transitions, lookup)
-        assert len(matched) == 1  # Still matches at this level
+        assert len(matched) == 1

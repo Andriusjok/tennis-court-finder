@@ -41,7 +41,7 @@ class TestRateLimiting:
                 "/api/auth/request-otp",
                 json={"email": "test@example.com"},
             )
-            assert resp.status_code == 200, f"Request {i+1} should succeed"
+            assert resp.status_code == 200, f"Request {i + 1} should succeed"
 
         # 6th request should be rate-limited
         resp = limited_client.post(
@@ -59,7 +59,7 @@ class TestRateLimiting:
                 json={"email": "test@example.com", "otp_code": "000000"},
             )
             # 401 (wrong OTP) is fine – we just need it not to be 429 yet
-            assert resp.status_code in (200, 401), f"Request {i+1} should not be rate-limited"
+            assert resp.status_code in (200, 401), f"Request {i + 1} should not be rate-limited"
 
         # 11th request should be rate-limited
         resp = limited_client.post(

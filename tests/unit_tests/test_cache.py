@@ -1,7 +1,7 @@
 """Tests for the caching layer."""
 
 import asyncio
-from datetime import date, timedelta
+from datetime import date
 
 import pytest
 
@@ -11,14 +11,9 @@ from tests.mocks.models import (
     MOCK_COURT_CLAY_OUTDOOR,
     MOCK_COURT_HARD_INDOOR,
     MOCK_COURTS,
-    MOCK_SLOT_BOOKED,
-    MOCK_SLOT_CLAY,
-    MOCK_SLOT_FOR_SALE,
-    MOCK_SLOT_FREE,
     MOCK_TIME_SLOTS,
 )
 from tests.mocks.services import MockClubService
-
 
 # ── SlotCache tests ────────────────────────────────────────────────────────
 
@@ -93,7 +88,9 @@ class TestSlotCache:
         cache.update(MOCK_COURTS, MOCK_TIME_SLOTS)
         today = date.today()
         slots = cache.get_time_slots(
-            date_from=today, date_to=today, surface_type="clay",
+            date_from=today,
+            date_to=today,
+            surface_type="clay",
         )
         assert all(s.surface_type == "clay" for s in slots)
 
@@ -126,7 +123,8 @@ class TestCachedClubService:
 
     @pytest.mark.asyncio
     async def test_list_courts_fallback_when_empty(
-        self, cached_service: CachedClubService,
+        self,
+        cached_service: CachedClubService,
     ):
         """Before start(), cache is empty — should fall through to delegate."""
         courts = await cached_service.list_courts()
