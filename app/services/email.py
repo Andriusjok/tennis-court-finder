@@ -77,6 +77,62 @@ def _build_html_body(
     """
 
 
+async def send_otp_email(to_email: str, otp_code: str) -> None:
+    """
+    Send (or log) an OTP code to the user.
+
+    If SMTP is not configured, falls back to console output.
+    """
+    subject = "🎾 Tennis Court Finder — Your login code"
+    html_body = f"""
+    <html>
+    <body style="font-family:sans-serif;color:#333">
+      <h2>🎾 Tennis Court Finder</h2>
+      <p>Your one-time login code is:</p>
+      <p style="font-size:2rem;font-weight:bold;letter-spacing:0.3em;
+                color:#1a73e8;margin:1em 0">{otp_code}</p>
+      <p>This code expires in 5 minutes.</p>
+      <p style="margin-top:2em;font-size:0.9em;color:#888">
+        If you didn't request this, you can safely ignore this email.
+      </p>
+    </body>
+    </html>
+    """
+
+    if not smtp_enabled():
+        logger.info(
+            "📧 [DEV] OTP for %s: %s  (SMTP not configured — printing to console)",
+            to_email,
+            otp_code,
+        )
+        return
+
+    import aiosmtplib
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = SMTP_FROM_EMAIL
+    msg["To"] = to_email
+
+    plain = f"Your Tennis Court Finder login code is: {otp_code}\n\nExpires in 5 minutes."
+    msg.attach(MIMEText(plain, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=SMTP_HOST,
+            port=SMTP_PORT,
+            username=SMTP_USERNAME,
+            password=SMTP_PASSWORD,
+            start_tls=SMTP_USE_TLS,
+        )
+        logger.info("OTP email sent to %s", to_email)
+    except Exception:
+        logger.exception("Failed to send OTP email to %s", to_email)
+        raise
+
+
 async def send_notification_email(
     to_email: str,
     club_name: str,

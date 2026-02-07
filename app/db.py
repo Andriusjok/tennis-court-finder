@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -101,6 +101,15 @@ CREATE TABLE IF NOT EXISTS notification_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_logs_sub ON notification_logs(subscription_id);
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+    email       TEXT NOT NULL,
+    code        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    used        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (email, code)
+);
 """
 
 
@@ -410,3 +419,65 @@ async def list_logs(subscription_id: str) -> list[NotificationLog]:
     ) as cur:
         rows = await cur.fetchall()
     return [_row_to_log(r) for r in rows]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#                    OTP CODE REPOSITORY
+# ══════════════════════════════════════════════════════════════════════════
+
+
+async def create_otp(email: str, code: str, ttl_seconds: int = 300) -> None:
+    """
+    Store an OTP code for the given email.
+
+    Any previous unused codes for this email are deleted first.
+    """
+    db = get_db()
+    # Remove old unused codes for this email
+    await db.execute(
+        "DELETE FROM otp_codes WHERE email = ? AND used = 0", (email,)
+    )
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=ttl_seconds)
+    await db.execute(
+        "INSERT INTO otp_codes (email, code, created_at, expires_at) VALUES (?, ?, ?, ?)",
+        (email, code, now.isoformat(), expires_at.isoformat()),
+    )
+    await db.commit()
+
+
+async def verify_otp(email: str, code: str) -> bool:
+    """
+    Verify an OTP code. Returns True if valid and not expired.
+
+    The code is marked as used on success so it can't be replayed.
+    """
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    async with db.execute(
+        """
+        SELECT rowid FROM otp_codes
+        WHERE email = ? AND code = ? AND used = 0 AND expires_at > ?
+        """,
+        (email, code, now),
+    ) as cur:
+        row = await cur.fetchone()
+
+    if row is None:
+        return False
+
+    # Mark as used
+    await db.execute(
+        "UPDATE otp_codes SET used = 1 WHERE email = ? AND code = ?",
+        (email, code),
+    )
+    await db.commit()
+    return True
+
+
+async def cleanup_expired_otps() -> None:
+    """Remove expired OTP codes (housekeeping)."""
+    db = get_db()
+    now = datetime.now(timezone.utc).isoformat()
+    await db.execute("DELETE FROM otp_codes WHERE expires_at < ?", (now,))
+    await db.commit()

@@ -2,12 +2,22 @@
 Application configuration from environment variables.
 
 All settings have sensible defaults for local development.
+A .env file in the project root is loaded automatically (if present).
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env file before reading any env vars
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# ── Environment ───────────────────────────────────────────────────────────
+
+ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 
 # ── Paths ─────────────────────────────────────────────────────────────────
 
@@ -16,6 +26,12 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 # SQLite database file
 DB_PATH: str = os.getenv("DB_PATH", str(DATA_DIR / "tennis_court_finder.db"))
+
+# ── JWT ───────────────────────────────────────────────────────────────────
+
+JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret-change-me-in-production")
+JWT_ALGORITHM: str = "HS256"
+JWT_EXPIRY_DAYS: int = int(os.getenv("JWT_EXPIRY_DAYS", "7"))
 
 # ── SMTP ──────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,31 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# IDE
+.vscode
+.idea
+.cursor*
+
+# Data & secrets
+data/
+.env
+*.db
+*.db-wal
+*.db-shm
+
+# Dev & docs
+tests/
+scripts/
+README.md
+LICENSE
+env.example

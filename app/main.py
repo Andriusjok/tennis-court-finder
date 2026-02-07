@@ -10,10 +10,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, HTMLResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app import db
+from app.config import ENVIRONMENT
+from app.rate_limit import limiter
 from app.routers import auth, clubs, courts, health, notifications, pages, time_slots
 from app.services.notifier import notifier
 from app.services.registry import registry
@@ -57,14 +62,45 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS (permissive for local dev) ───────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ── Rate limiting ─────────────────────────────────────────────────────────
+app.state.limiter = limiter
+
+
+def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Return JSON for API routes, HTML for browser pages."""
+    if request.url.path.startswith("/api"):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"Rate limit exceeded: {exc.detail}"},
+        )
+    return HTMLResponse(
+        f"<h2>Too many requests</h2><p>{exc.detail}</p>"
+        "<p>Please wait a moment and try again.</p>",
+        status_code=429,
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+
+# ── CORS ──────────────────────────────────────────────────────────────────
+if ENVIRONMENT == "production":
+    # In production, restrict to same-origin only (UI is served from the app)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["*"],
+    )
+else:
+    # Permissive for local development
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # ── Register routers ─────────────────────────────────────────────────────
 app.include_router(health.router)

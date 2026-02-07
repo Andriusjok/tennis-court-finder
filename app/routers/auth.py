@@ -1,11 +1,14 @@
 """
-Authentication endpoints – email OTP flow (mocked).
+Authentication endpoints – email OTP flow with real JWT tokens.
 """
 
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Response
+import jwt
+from fastapi import APIRouter, HTTPException, Request, Response, status
 
+from app.config import ENVIRONMENT, JWT_ALGORITHM, JWT_EXPIRY_DAYS, JWT_SECRET
 from app.dependencies import CurrentUser
 from app.generated.models import (
     AuthResponse,
@@ -15,11 +18,22 @@ from app.generated.models import (
     OtpVerifyRequest,
     UserInfo,
 )
+from app import db
+from app.rate_limit import STRICT, AUTH, limiter
+from app.services.email import send_otp_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# ── Mock OTP store (replace with real implementation) ─────────────────────
-_MOCK_VALID_OTP = "123456"
+
+def _create_jwt(email: str) -> str:
+    """Create a signed JWT for the given email."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": email,
+        "iat": now,
+        "exp": now + timedelta(days=JWT_EXPIRY_DAYS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 @router.post(
@@ -28,12 +42,16 @@ _MOCK_VALID_OTP = "123456"
     operation_id="requestOtp",
     summary="Request a one-time password sent to the given email",
 )
-async def request_otp(body: OtpRequest) -> OtpRequestResponse:
+@limiter.limit(STRICT)
+async def request_otp(request: Request, body: OtpRequest) -> OtpRequestResponse:
     """
-    Mock implementation: always returns success.
-    In production this would send a real email with a time-limited OTP.
+    Generate a 6-digit OTP, store it in the database, and send it via email.
+    In dev mode (no SMTP configured), the OTP is printed to the console.
     """
-    # TODO: Send actual OTP email
+    otp_code = f"{secrets.randbelow(1_000_000):06d}"
+    await db.create_otp(body.email, otp_code, ttl_seconds=300)
+    await send_otp_email(body.email, otp_code)
+
     return OtpRequestResponse(
         message=f"OTP sent to {body.email}",
         expires_in_seconds=300,
@@ -46,29 +64,27 @@ async def request_otp(body: OtpRequest) -> OtpRequestResponse:
     operation_id="verifyOtp",
     summary="Verify OTP and receive a JWT session cookie",
 )
-async def verify_otp(body: OtpVerifyRequest, response: Response) -> AuthResponse:
+@limiter.limit(AUTH)
+async def verify_otp(request: Request, body: OtpVerifyRequest, response: Response) -> AuthResponse:
     """
-    Mock implementation: accepts OTP '123456' for any email.
-    In production this would validate the OTP, create/find the user,
-    generate a real JWT and set it in an HTTP-only cookie.
+    Validate the OTP against the database. On success, generate a signed JWT,
+    set it as an HTTP-only cookie, and return the user info.
     """
-    # TODO: Validate OTP and generate real JWT
-    if body.otp_code != _MOCK_VALID_OTP:
-        from fastapi import HTTPException, status
-
+    valid = await db.verify_otp(body.email, body.otp_code)
+    if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired OTP",
         )
 
-    # Set mock JWT cookie
-    mock_jwt = f"mock-jwt-for-{body.email}"
+    token = _create_jwt(body.email)
     response.set_cookie(
         key="session",
-        value=mock_jwt,
+        value=token,
         httponly=True,
         samesite="lax",
-        max_age=86400,  # 24 hours
+        secure=ENVIRONMENT == "production",
+        max_age=JWT_EXPIRY_DAYS * 86400,
     )
 
     user = UserInfo(

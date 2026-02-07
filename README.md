@@ -10,10 +10,11 @@ Real-time tennis court availability tracker with notifications. Monitors integra
 | **Web UI** | ✅ | Jinja2 + HTMX + Pico CSS — schedule grid, login, alert management |
 | **SEB Arena integration** | ✅ | Live court & slot data from [book.sebarena.lt](https://book.sebarena.lt) |
 | **Caching** | ✅ | Background refresh every 60 s — external API is never hit per-request |
-| **Auth** | 🔶 | Email OTP flow (mocked — any email + code `123456` works) |
-| **Database** | ✅ | SQLite via `aiosqlite` — subscriptions persist across restarts |
+| **Auth** | ✅ | Email OTP → signed JWT stored in HTTP-only cookie |
+| **Database** | ✅ | SQLite via `aiosqlite` — subscriptions & OTP codes persist across restarts |
 | **Notification engine** | ✅ | Background task detects slot status transitions, matches against subscriptions |
-| **Email delivery** | 🔶 | SMTP via `aiosmtplib` — falls back to console output when SMTP is not configured |
+| **Email delivery** | ✅ | SMTP via `aiosmtplib` — falls back to console output when SMTP is not configured |
+| **Deployment** | ✅ | Dockerfile, Fly.io config, GitHub Actions CI/CD |
 
 ## Quick Start
 
@@ -33,13 +34,69 @@ Open [localhost:8000](http://localhost:8000) for the UI, or [localhost:8000/docs
 
 The SQLite database is created automatically at `data/tennis_court_finder.db` on first run.
 
+## Deployment (Fly.io)
+
+The app is designed to run on [Fly.io](https://fly.io) free tier with a persistent volume for SQLite.
+
+### First-time setup
+
+```bash
+# Install the Fly CLI
+brew install flyctl
+
+# Authenticate
+fly auth login
+
+# Create the app (uses fly.toml config)
+fly launch --no-deploy
+
+# Create a 1 GB persistent volume for SQLite
+fly volumes create data --region ams --size 1
+
+# Set production secrets
+fly secrets set \
+  JWT_SECRET=$(openssl rand -hex 32) \
+  SMTP_HOST=smtp.example.com \
+  SMTP_PORT=587 \
+  SMTP_USERNAME=your-username \
+  SMTP_PASSWORD=your-password \
+  SMTP_FROM_EMAIL=alerts@yourdomain.com
+
+# Deploy
+fly deploy
+```
+
+### Automated deployment via GitHub Actions
+
+Push to `main` triggers the CI/CD pipeline (`.github/workflows/ci.yml`):
+
+1. **Test** — runs `pytest` on every push and PR
+2. **Deploy** — on push to `main`, deploys to Fly.io automatically
+
+Add the `FLY_API_TOKEN` secret to your GitHub repo:
+
+```bash
+fly tokens create deploy -x 999999h
+# Copy the token → GitHub repo → Settings → Secrets → Actions → FLY_API_TOKEN
+```
+
+### SMTP (free tier options)
+
+| Provider | Free tier | Setup |
+|----------|-----------|-------|
+| [Brevo](https://brevo.com) | 300 emails/day | SMTP credentials in dashboard |
+| [Resend](https://resend.com) | 3,000 emails/month | SMTP credentials in dashboard |
+| Gmail | ~500/day | App password via Google Account security |
+
+Without SMTP configured, all emails (OTP codes, notifications) are printed to the console.
+
 ## Project Structure
 
 ```
 openapi.yaml              ← single source of truth for the API contract
 app/
-  config.py               ← settings from env vars (DB, SMTP, notifier)
-  db.py                   ← SQLite repository (subscriptions, notification logs)
+  config.py               ← settings from env vars (JWT, DB, SMTP, notifier)
+  db.py                   ← SQLite repository (subscriptions, OTP codes, logs)
   generated/models.py     ← auto-generated from openapi.yaml (do not edit)
   routers/                ← FastAPI route handlers (API + HTML pages)
   services/
@@ -51,10 +108,12 @@ app/
     seb_arena/            ← SEB Arena integration (client, service, config)
   templates/              ← Jinja2 templates (base, pages, HTMX partials)
 data/                     ← SQLite DB file (gitignored, auto-created)
+Dockerfile                ← multi-stage production image
+fly.toml                  ← Fly.io deployment config
+.github/workflows/ci.yml  ← CI/CD pipeline (test + deploy)
 scripts/generate.py       ← model generation script
 tests/
-  unit_tests/             ← pytest unit tests (79 tests)
-  integration_tests/      ← (placeholder)
+  unit_tests/             ← pytest unit tests (81 tests)
   mocks/                  ← shared mock data & services
 ```
 

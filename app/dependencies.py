@@ -2,15 +2,21 @@
 Shared FastAPI dependencies – authentication, pagination, etc.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
+import jwt
 from fastapi import Cookie, Depends, HTTPException, Query, status
 
+from app.config import JWT_ALGORITHM, JWT_SECRET
 from app.generated.models import UserInfo
+
+logger = logging.getLogger(__name__)
 
 
 # ── Pagination ────────────────────────────────────────────────────────────
+
 
 class PaginationParams:
     """Common pagination query parameters."""
@@ -30,13 +36,26 @@ class PaginationParams:
         return (self.page - 1) * self.page_size
 
 
-# ── Authentication (mock) ─────────────────────────────────────────────────
+# ── JWT helpers ───────────────────────────────────────────────────────────
 
-# TODO: Replace with real JWT validation once auth is implemented.
-# For now we parse the email out of the mock session cookie
-# ("mock-jwt-for-{email}") so each login gets its own subscriptions.
 
-_MOCK_COOKIE_PREFIX = "mock-jwt-for-"
+def decode_session_email(session: str | None) -> str | None:
+    """
+    Decode the session JWT and return the email, or None if invalid/absent.
+
+    This is a non-throwing helper for code paths that should degrade
+    gracefully when the user is not logged in (e.g. page rendering).
+    """
+    if not session:
+        return None
+    try:
+        payload = jwt.decode(session, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload.get("sub")
+    except jwt.PyJWTError:
+        return None
+
+
+# ── Authentication dependency ─────────────────────────────────────────────
 
 
 async def get_current_user(
@@ -45,8 +64,7 @@ async def get_current_user(
     """
     Extract and validate the JWT from the session cookie.
 
-    Currently a **mock** – the email is parsed from the cookie value.
-    Replace with real JWT decoding later.
+    Raises 401 if the cookie is missing or the token is invalid/expired.
     """
     if session is None:
         raise HTTPException(
@@ -54,15 +72,29 @@ async def get_current_user(
             detail="Authentication required. Please log in via /api/auth/verify-otp",
         )
 
-    # Extract email from "mock-jwt-for-{email}"
-    if session.startswith(_MOCK_COOKIE_PREFIX):
-        email = session[len(_MOCK_COOKIE_PREFIX):]
-    else:
-        email = "player@example.com"
+    try:
+        payload = jwt.decode(session, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please log in again.",
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session. Please log in again.",
+        )
+
+    email: str | None = payload.get("sub")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload.",
+        )
 
     return UserInfo(
         email=email,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.fromtimestamp(payload.get("iat", 0), tz=timezone.utc),
     )
 
 

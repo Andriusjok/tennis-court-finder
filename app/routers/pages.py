@@ -17,6 +17,7 @@ from fastapi import APIRouter, Cookie, Form, HTTPException, Query, Request, Resp
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app.rate_limit import STRICT, AUTH, limiter
 from app.services.registry import registry
 
 # ── Template engine ───────────────────────────────────────────────────────
@@ -182,19 +183,16 @@ async def partial_subscription_list(
     session: str | None = Cookie(None),
 ):
     """Return the subscriptions table partial (for HTMX swap)."""
-    if not session:
+    from app.dependencies import decode_session_email
+
+    email = decode_session_email(session)
+    if not email:
         return HTMLResponse(
             '<p class="text-muted">Please <a href="/login">log in</a> to see your alerts.</p>'
         )
 
     from app import db
-    from app.dependencies import _MOCK_COOKIE_PREFIX
 
-    email = (
-        session[len(_MOCK_COOKIE_PREFIX):]
-        if session.startswith(_MOCK_COOKIE_PREFIX)
-        else "player@example.com"
-    )
     subs = await db.list_subscriptions(email)
     return templates.TemplateResponse(
         "partials/subscription_list.html",
@@ -247,17 +245,13 @@ async def create_notification_page(
     session: str | None = Cookie(None),
 ):
     """Handle form submission: create a notification via the DB."""
-    if not session:
+    from app.dependencies import decode_session_email
+
+    email = decode_session_email(session)
+    if not email:
         return RedirectResponse("/login", status_code=303)
 
     from app import db
-    from app.dependencies import _MOCK_COOKIE_PREFIX
-
-    email = (
-        session[len(_MOCK_COOKIE_PREFIX):]
-        if session.startswith(_MOCK_COOKIE_PREFIX)
-        else "player@example.com"
-    )
 
     # Parse specific dates
     parsed_dates = None
@@ -297,12 +291,20 @@ async def login_page(request: Request):
 
 
 @router.post("/login", response_class=HTMLResponse)
+@limiter.limit(STRICT)
 async def login_submit_email(
     request: Request,
     email: str = Form(...),
 ):
-    """Handle email form → show OTP entry step."""
-    # In a real app we'd call the /api/auth/request-otp endpoint here
+    """Handle email form → generate OTP and show OTP entry step."""
+    import secrets
+    from app import db
+    from app.services.email import send_otp_email
+
+    otp_code = f"{secrets.randbelow(1_000_000):06d}"
+    await db.create_otp(email, otp_code, ttl_seconds=300)
+    await send_otp_email(email, otp_code)
+
     return templates.TemplateResponse(
         "pages/login.html",
         {
@@ -315,33 +317,38 @@ async def login_submit_email(
 
 
 @router.post("/login/verify")
+@limiter.limit(AUTH)
 async def login_verify_otp(
     request: Request,
     response: Response,
     email: str = Form(...),
     otp_code: str = Form(...),
 ):
-    """Verify OTP and set session cookie, then redirect to notifications."""
-    from app.routers.auth import _MOCK_VALID_OTP
+    """Verify OTP and set session cookie with a real JWT."""
+    from app import db
+    from app.routers.auth import _create_jwt
+    from app.config import ENVIRONMENT, JWT_EXPIRY_DAYS
 
-    if otp_code != _MOCK_VALID_OTP:
+    valid = await db.verify_otp(email, otp_code)
+    if not valid:
         return templates.TemplateResponse(
             "pages/login.html",
             {
                 "request": request,
                 "step": "otp",
                 "email": email,
-                "flash": {"type": "error", "message": "Invalid code. Try again."},
+                "flash": {"type": "error", "message": "Invalid or expired code. Try again."},
             },
         )
 
-    # Set session cookie (mock JWT)
+    token = _create_jwt(email)
     redirect = RedirectResponse("/notifications", status_code=303)
     redirect.set_cookie(
         key="session",
-        value=f"mock-jwt-for-{email}",
+        value=token,
         httponly=True,
         samesite="lax",
-        max_age=86400,
+        secure=ENVIRONMENT == "production",
+        max_age=JWT_EXPIRY_DAYS * 86400,
     )
     return redirect

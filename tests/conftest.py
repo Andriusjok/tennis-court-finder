@@ -78,6 +78,10 @@ def _test_env(monkeypatch, tmp_path):
     # ── No-op notifier ────────────────────────────────────────────────
     monkeypatch.setattr("app.main.notifier", _NoopNotifier())
 
+    # ── Disable rate limiting in tests ────────────────────────────────
+    from app.rate_limit import limiter as _limiter
+    monkeypatch.setattr(_limiter, "enabled", False)
+
     return test_registry
 
 

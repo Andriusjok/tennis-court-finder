@@ -3,14 +3,15 @@
 Entry point for the Tennis Court Finder application.
 """
 
+import os
+
 import uvicorn
-from app.main import app
 
 if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
+        host=os.getenv("API_HOST", "0.0.0.0"),
+        port=int(os.getenv("API_PORT", "8000")),
+        reload=os.getenv("API_RELOAD", "false").lower() == "true",
+        log_level=os.getenv("LOG_LEVEL", "info").lower(),
     )
