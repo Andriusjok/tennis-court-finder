@@ -1,8 +1,12 @@
-{% if courts %}
+{% if court_groups %}
 <fieldset>
-  <legend>Courts <small class="text-muted">(optional – leave empty for all)</small></legend>
+  <legend>Courts <small class="text-muted">(optional -- leave empty for all)</small></legend>
+  {% for group in court_groups %}
+  {% if court_groups | length > 1 %}
+  <p style="font-weight:600; font-size:0.85rem; margin:0.6rem 0 0.3rem; opacity:0.65;">{{ group.club_name }}</p>
+  {% endif %}
   <div class="court-picker-grid">
-    {% for court in courts %}
+    {% for court in group.courts %}
     <label class="court-chip">
       <input type="checkbox" name="court_ids" value="{{ court.id }}"
              {% if selected_court_ids and court.id | string in selected_court_ids %}checked{% endif %}>
@@ -13,7 +17,6 @@
     </label>
     {% endfor %}
   </div>
+  {% endfor %}
 </fieldset>
-{% else %}
-<p class="text-muted" style="font-size:0.9rem;">No courts found for this club.</p>
 {% endif %}

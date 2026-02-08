@@ -219,19 +219,27 @@ async def partial_subscription_list(
 @router.get("/partials/club-courts", response_class=HTMLResponse)
 async def partial_club_courts(
     request: Request,
-    club_id: str = Query(""),
+    club_ids: list[str] = Query(default=[]),
 ):
-    if not club_id:
+    if not club_ids:
         return HTMLResponse("")
 
-    service = registry.get_service(club_id)
-    if service is None:
-        return HTMLResponse('<p class="text-muted">Club not found.</p>')
+    groups: list[dict] = []
+    for cid in club_ids:
+        service = registry.get_service(cid)
+        if service is None:
+            continue
+        club = service.get_club()
+        courts = await service.list_courts()
+        if courts:
+            groups.append({"club_name": club.name, "courts": courts})
 
-    courts = await service.list_courts()
+    if not groups:
+        return HTMLResponse("")
+
     return templates.TemplateResponse(
         "partials/court_picker.html",
-        {"request": request, "courts": courts, "selected_court_ids": []},
+        {"request": request, "court_groups": groups, "selected_court_ids": []},
     )
 
 
@@ -249,22 +257,25 @@ async def notifications_page(request: Request, session: str | None = Cookie(None
 @router.get("/notifications/new", response_class=HTMLResponse)
 async def notification_form(
     request: Request,
-    club_id: str | None = Query(None),
+    club_ids: list[str] = Query(default=[]),
 ):
     clubs = registry.list_clubs()
-    courts = []
-    if club_id:
-        service = registry.get_service(club_id)
+    court_groups: list[dict] = []
+    for cid in club_ids:
+        service = registry.get_service(cid)
         if service:
+            club = service.get_club()
             courts = await service.list_courts()
+            if courts:
+                court_groups.append({"club_name": club.name, "courts": courts})
 
     return templates.TemplateResponse(
         "pages/notification_form.html",
         {
             "request": request,
             "clubs": clubs,
-            "courts": courts,
-            "selected_club_id": club_id,
+            "court_groups": court_groups,
+            "selected_club_ids": club_ids,
             "surface_types": _SURFACE_TYPES,
             "court_types": _COURT_TYPES,
             "editing": False,
@@ -277,7 +288,8 @@ async def notification_form(
 async def create_notification_page(
     request: Request,
     response: Response,
-    club_id: str = Form(...),
+    club_ids: list[str] = Form(default=[]),
+    club_id: str | None = Form(None),
     notify_on_statuses: list[str] = Form(...),
     time_from: str | None = Form(None),
     time_to: str | None = Form(None),
@@ -293,19 +305,38 @@ async def create_notification_page(
     if not email:
         return RedirectResponse("/login", status_code=303)
 
-    form = _parse_notification_form(
-        club_id,
-        notify_on_statuses,
-        time_from,
-        time_to,
-        is_recurring,
-        days_of_week,
-        specific_dates,
-        court_ids,
-        surface_types,
-        court_types,
-    )
-    await db.create_subscription(user_email=email, **form)
+    # Resolve final list of club IDs (multi-create or single edit fallback)
+    resolved_club_ids = club_ids or ([club_id] if club_id else [])
+    if not resolved_club_ids:
+        return RedirectResponse("/notifications/new", status_code=303)
+
+    # Build a set of court IDs belonging to each club for filtering
+    for cid in resolved_club_ids:
+        club_court_ids: list[str] | None = None
+        if court_ids:
+            service = registry.get_service(cid)
+            if service:
+                club_courts = await service.list_courts()
+                club_court_id_set = {str(c.id) for c in club_courts}
+                filtered = [ci for ci in court_ids if ci in club_court_id_set]
+                club_court_ids = filtered or None
+            else:
+                club_court_ids = None
+
+        form = _parse_notification_form(
+            cid,
+            notify_on_statuses,
+            time_from,
+            time_to,
+            is_recurring,
+            days_of_week,
+            specific_dates,
+            club_court_ids,
+            surface_types,
+            court_types,
+        )
+        await db.create_subscription(user_email=email, **form)
+
     return RedirectResponse("/notifications", status_code=303)
 
 
@@ -324,18 +355,21 @@ async def edit_notification_form(
         raise HTTPException(status_code=404, detail="Alert not found")
 
     clubs = registry.list_clubs()
-    courts = []
+    court_groups: list[dict] = []
     service = registry.get_service(sub.club_id)
     if service:
+        club = service.get_club()
         courts = await service.list_courts()
+        if courts:
+            court_groups.append({"club_name": club.name, "courts": courts})
 
     return templates.TemplateResponse(
         "pages/notification_form.html",
         {
             "request": request,
             "clubs": clubs,
-            "courts": courts,
-            "selected_club_id": sub.club_id,
+            "court_groups": court_groups,
+            "selected_club_ids": [sub.club_id],
             "surface_types": _SURFACE_TYPES,
             "court_types": _COURT_TYPES,
             "editing": True,

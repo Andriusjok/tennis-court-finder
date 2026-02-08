@@ -80,6 +80,26 @@ MOCK_COURT_CARPET_INDOOR = Court(
 
 MOCK_COURTS = [MOCK_COURT_HARD_INDOOR, MOCK_COURT_CLAY_OUTDOOR, MOCK_COURT_CARPET_INDOOR]
 
+MOCK_COURT_OTHER_1 = Court(
+    id=_uuid("other-court-1"),
+    club_id="other-club",
+    name="Court A",
+    surface_type="hard",
+    court_type="indoor",
+    description="Indoor hard court at other club",
+)
+
+MOCK_COURT_OTHER_2 = Court(
+    id=_uuid("other-court-2"),
+    club_id="other-club",
+    name="Court B",
+    surface_type="clay",
+    court_type="outdoor",
+    description="Outdoor clay court at other club",
+)
+
+MOCK_COURTS_OTHER = [MOCK_COURT_OTHER_1, MOCK_COURT_OTHER_2]
+
 _TODAY = date.today()
 _BASE_DT = datetime(_TODAY.year, _TODAY.month, _TODAY.day, 10, 0, tzinfo=UTC)
 

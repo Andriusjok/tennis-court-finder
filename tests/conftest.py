@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.dependencies import get_current_user
 from app.main import app
 from app.services.registry import ClubRegistry
-from tests.mocks.models import MOCK_CLUB, MOCK_CLUB_2, MOCK_USER
+from tests.mocks.models import MOCK_CLUB, MOCK_CLUB_2, MOCK_COURTS_OTHER, MOCK_USER
 from tests.mocks.services import MockClubService
 
 
@@ -30,7 +30,7 @@ def _test_env(monkeypatch, tmp_path):
     test_registry._services[MOCK_CLUB.id] = svc1
     test_registry._clients = []
 
-    svc2 = MockClubService(club=MOCK_CLUB_2, courts=[], time_slots=[])
+    svc2 = MockClubService(club=MOCK_CLUB_2, courts=MOCK_COURTS_OTHER, time_slots=[])
     test_registry._services[MOCK_CLUB_2.id] = svc2
 
     test_registry.register = lambda *a, **kw: None  # type: ignore[assignment]

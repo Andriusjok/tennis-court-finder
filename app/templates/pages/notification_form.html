@@ -11,42 +11,49 @@
 <form method="post"
       action="{{ '/notifications/' ~ sub.id ~ '/edit' if editing else '/notifications/new' }}">
 
-  <!-- ── Club ──────────────────────────────────────────────────────── -->
+  <!-- ── Club(s) ────────────────────────────────────────────────────── -->
+  {% if editing %}
+  {# Edit mode: single club select (one subscription = one club) #}
   <label>
     Club
     <select name="club_id" required
             hx-get="/partials/club-courts"
             hx-target="#court-picker"
             hx-trigger="change"
-            hx-include="this">
+            hx-vals='js:{"club_ids": [event.target.value]}'>
       <option value="">Select a club…</option>
       {% for club in clubs %}
       <option value="{{ club.id }}"
-              {% if (editing and sub.club_id == club.id) or (not editing and club.id == selected_club_id) %}selected{% endif %}>
+              {% if sub.club_id == club.id %}selected{% endif %}>
         {{ club.name }}
       </option>
       {% endfor %}
     </select>
   </label>
+  {% else %}
+  {# Create mode: multi-club checkboxes #}
+  <fieldset>
+    <legend>Clubs</legend>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1.5rem;">
+      {% for club in clubs %}
+      <label>
+        <input type="checkbox" name="club_ids" value="{{ club.id }}"
+               {% if selected_club_ids and club.id in selected_club_ids %}checked{% endif %}
+               hx-get="/partials/club-courts"
+               hx-target="#court-picker"
+               hx-trigger="change"
+               hx-include="[name='club_ids']">
+        {{ club.name }}
+      </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+  {% endif %}
 
   <!-- ── Courts (loaded dynamically) ──────────────────────────────── -->
   <div id="court-picker">
-    {% if courts %}
-    <fieldset>
-      <legend>Courts <small class="text-muted">(optional – leave empty for all)</small></legend>
-      <div class="court-picker-grid">
-        {% for court in courts %}
-        <label class="court-chip">
-          <input type="checkbox" name="court_ids" value="{{ court.id }}"
-                 {% if editing and sub.court_ids and court.id | string in sub.court_ids %}checked{% endif %}>
-          <span class="court-chip-body">
-            <strong>{{ court.name }}</strong>
-            <small>{{ court.surface_type | replace('_', ' ') | title }} · {{ court.court_type | title }}</small>
-          </span>
-        </label>
-        {% endfor %}
-      </div>
-    </fieldset>
+    {% if court_groups %}
+    {% include "partials/court_picker.html" %}
     {% endif %}
   </div>
 
@@ -184,14 +191,6 @@
         minDate: 'today',
         conjunction: ', ',
       });
-    }
-  });
-
-  // Auto-load courts for pre-selected club on page load
-  document.addEventListener('DOMContentLoaded', function() {
-    const clubSelect = document.querySelector('select[name="club_id"]');
-    if (clubSelect && clubSelect.value) {
-      htmx.trigger(clubSelect, 'change');
     }
   });
 </script>
