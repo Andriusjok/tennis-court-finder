@@ -18,12 +18,23 @@
   <style>
     /* ── Layout ─────────────────────────────────────────── */
     :root {
-      --slot-free: #2ecc40;
-      --slot-booked: #e74c3c;
-      --slot-for-sale: #f39c12;
-      --slot-free-bg: #eafaf1;
-      --slot-booked-bg: #fdecea;
-      --slot-for-sale-bg: #fef9e7;
+      --slot-free: #22c55e;
+      --slot-booked: #ef4444;
+      --slot-for-sale: #f59e0b;
+      --slot-free-bg: #f0fdf4;
+      --slot-booked-bg: #fef2f2;
+      --slot-for-sale-bg: #fffbeb;
+      --slot-empty-bg: #f8fafc;
+      --toolbar-bg: #f8fafc;
+      --toolbar-border: #e2e8f0;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+      --radius-lg: 12px;
+      --radius-md: 8px;
+    }
+
+    body {
+      background: #f1f5f9;
     }
 
     nav .brand {
@@ -42,57 +53,252 @@
       display: inline-block;
     }
 
-    /* ── Schedule grid ──────────────────────────────────── */
-    .schedule-grid {
-      display: grid;
-      gap: 2px;
-      overflow-x: auto;
+    /* ── Schedule toolbar ────────────────────────────────── */
+    .schedule-toolbar {
+      background: var(--toolbar-bg);
+      border: 1px solid var(--toolbar-border);
+      border-radius: var(--radius-lg);
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .schedule-toolbar .toolbar-section {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .schedule-toolbar .toolbar-divider {
+      width: 1px;
+      height: 28px;
+      background: var(--toolbar-border);
+      margin: 0 0.25rem;
+    }
+    .schedule-toolbar a[role="button"],
+    .schedule-toolbar button {
+      margin-bottom: 0;
+      padding: 0.35rem 0.65rem;
+      width: auto;
       font-size: 0.85rem;
+      border-radius: 6px;
     }
-    .schedule-grid .header-cell {
-      background: var(--pico-primary-background);
-      color: var(--pico-primary-inverse);
-      padding: 0.4rem 0.3rem;
-      text-align: center;
-      font-weight: 600;
-      position: sticky;
-      top: 0;
-      z-index: 1;
+    .schedule-toolbar input[type="date"],
+    .schedule-toolbar select {
+      margin-bottom: 0;
+      padding: 0.35rem 0.5rem;
+      font-size: 0.85rem;
+      height: auto;
+      border-radius: 6px;
     }
-    .schedule-grid .time-cell {
-      padding: 0.3rem 0.4rem;
+    .schedule-toolbar input[type="date"] {
+      max-width: 155px;
+    }
+    .schedule-toolbar select {
+      max-width: 150px;
+    }
+    .schedule-toolbar .toolbar-label {
+      font-size: 0.75rem;
       font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.5;
       white-space: nowrap;
-      background: var(--pico-card-background-color);
-      border-right: 2px solid var(--pico-primary-background);
-    }
-    .schedule-grid .slot-cell {
-      padding: 0.25rem;
-      text-align: center;
-      cursor: default;
-      border-radius: 3px;
-      font-size: 0.8rem;
-    }
-    .slot-cell.free {
-      background: var(--slot-free-bg);
-      color: #27ae60;
-      border-left: 3px solid var(--slot-free);
-    }
-    .slot-cell.booked {
-      background: var(--slot-booked-bg);
-      color: #c0392b;
-      border-left: 3px solid var(--slot-booked);
-    }
-    .slot-cell.for_sale {
-      background: var(--slot-for-sale-bg);
-      color: #e67e22;
-      border-left: 3px solid var(--slot-for-sale);
-    }
-    .slot-cell.empty {
-      background: var(--pico-card-background-color);
     }
 
-    /* ── Legend ──────────────────────────────────────────── */
+    /* ── Legend (inline in toolbar) ───────────────────────── */
+    .legend-inline {
+      display: flex;
+      gap: 0.75rem;
+      font-size: 0.8rem;
+      align-items: center;
+    }
+    .legend-inline span {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+    }
+    .legend-inline span::before {
+      content: "";
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+    .legend-inline .l-free::before  { background: var(--slot-free); }
+    .legend-inline .l-booked::before { background: var(--slot-booked); }
+    .legend-inline .l-for-sale::before { background: var(--slot-for-sale); }
+
+    /* ── Schedule grid ──────────────────────────────────── */
+    .schedule-card {
+      background: white;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--toolbar-border);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+    }
+    .schedule-grid-wrapper {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .schedule-grid {
+      display: grid;
+      gap: 1px;
+      font-size: 0.85rem;
+      background: var(--toolbar-border);
+      min-width: fit-content;
+    }
+    .schedule-grid .header-cell {
+      background: #1e293b;
+      color: #f8fafc;
+      padding: 0.6rem 0.4rem;
+      text-align: center;
+      font-weight: 600;
+      font-size: 0.8rem;
+      letter-spacing: 0.01em;
+    }
+    .schedule-grid .header-cell small {
+      display: block;
+      font-weight: 400;
+      font-size: 0.7rem;
+      opacity: 0.65;
+      margin-top: 2px;
+    }
+    .schedule-grid .time-cell {
+      padding: 0 0.6rem;
+      font-weight: 600;
+      font-size: 0.78rem;
+      white-space: nowrap;
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      color: #475569;
+      border-right: none;
+    }
+    .schedule-grid .slot-cell {
+      padding: 0;
+      text-align: center;
+      cursor: default;
+      border-radius: 0;
+      font-size: 0;
+      min-height: 32px;
+      transition: filter 0.15s ease, transform 0.1s ease;
+      position: relative;
+      background: white;
+    }
+    .slot-cell.free {
+      background: var(--slot-free);
+      opacity: 0.8;
+    }
+    .slot-cell.free:hover {
+      opacity: 1;
+      filter: brightness(1.08);
+      z-index: 1;
+      box-shadow: inset 0 0 0 2px rgba(0,0,0,0.12);
+    }
+    .slot-cell.booked {
+      background: var(--slot-booked);
+      opacity: 0.75;
+    }
+    .slot-cell.booked:hover {
+      opacity: 0.9;
+      filter: brightness(1.05);
+      z-index: 1;
+      box-shadow: inset 0 0 0 2px rgba(0,0,0,0.12);
+    }
+    .slot-cell.for_sale {
+      background: var(--slot-for-sale);
+      opacity: 0.8;
+    }
+    .slot-cell.for_sale:hover {
+      opacity: 1;
+      filter: brightness(1.08);
+      z-index: 1;
+      box-shadow: inset 0 0 0 2px rgba(0,0,0,0.12);
+    }
+    .slot-cell.empty {
+      background: var(--slot-empty-bg);
+    }
+
+    /* Tooltip on hover */
+    .slot-cell[data-tooltip] {
+      cursor: pointer;
+    }
+    .slot-cell[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e293b;
+      color: #f8fafc;
+      font-size: 0.72rem;
+      padding: 0.3rem 0.55rem;
+      border-radius: 5px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 10;
+    }
+    .slot-cell[data-tooltip]:hover::after {
+      opacity: 1;
+    }
+
+    /* ── Schedule header ─────────────────────────────────── */
+    .schedule-header {
+      margin-bottom: 1rem;
+    }
+    .schedule-header hgroup {
+      margin-bottom: 0.5rem;
+    }
+    .schedule-header hgroup h1 {
+      font-size: 1.6rem;
+      margin-bottom: 0.1rem;
+    }
+    .schedule-header hgroup p {
+      font-size: 0.9rem;
+      opacity: 0.65;
+      margin-bottom: 0;
+    }
+
+    /* ── Date nav (legacy fallback) ──────────────────────── */
+    .date-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .date-nav input[type="date"] {
+      margin-bottom: 0;
+      max-width: 180px;
+    }
+    .date-nav button {
+      margin-bottom: 0;
+      padding: 0.4rem 0.8rem;
+      width: auto;
+    }
+
+    /* ── Filter bar (legacy fallback) ────────────────────── */
+    .filter-bar {
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+      align-items: end;
+    }
+    .filter-bar label {
+      margin-bottom: 0;
+    }
+    .filter-bar select {
+      margin-bottom: 0;
+      max-width: 180px;
+    }
+
+    /* ── Legacy legend (fallback) ─────────────────────────── */
     .legend {
       display: flex;
       gap: 1.2rem;
@@ -112,37 +318,38 @@
     .legend .l-booked::before { background: var(--slot-booked); }
     .legend .l-for-sale::before { background: var(--slot-for-sale); }
 
-    /* ── Date nav ───────────────────────────────────────── */
-    .date-nav {
+    /* ── Notification CTA ────────────────────────────────── */
+    .notification-cta {
+      background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius-lg);
+      padding: 1.25rem 1.5rem;
+      margin-top: 1.5rem;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
+      gap: 1rem;
     }
-    .date-nav input[type="date"] {
+    .notification-cta .cta-icon {
+      font-size: 1.8rem;
+      flex-shrink: 0;
+    }
+    .notification-cta .cta-text {
+      flex: 1;
+    }
+    .notification-cta .cta-text strong {
+      display: block;
+      font-size: 1rem;
+      margin-bottom: 0.2rem;
+    }
+    .notification-cta .cta-text p {
+      margin: 0;
+      font-size: 0.88rem;
+      opacity: 0.7;
+    }
+    .notification-cta a[role="button"] {
+      white-space: nowrap;
       margin-bottom: 0;
-      max-width: 180px;
-    }
-    .date-nav button {
-      margin-bottom: 0;
-      padding: 0.4rem 0.8rem;
-      width: auto;
-    }
-
-    /* ── Filter bar ─────────────────────────────────────── */
-    .filter-bar {
-      display: flex;
-      gap: 0.8rem;
-      flex-wrap: wrap;
-      margin-bottom: 1rem;
-      align-items: end;
-    }
-    .filter-bar label {
-      margin-bottom: 0;
-    }
-    .filter-bar select {
-      margin-bottom: 0;
-      max-width: 180px;
+      flex-shrink: 0;
     }
 
     /* ── Club cards ──────────────────────────────────────── */
@@ -152,14 +359,17 @@
       gap: 1rem;
     }
     .club-card {
-      border-radius: 8px;
+      border-radius: var(--radius-md);
       padding: 1.2rem;
       text-decoration: none;
       color: inherit;
-      transition: box-shadow 0.2s;
+      transition: box-shadow 0.2s, transform 0.15s;
+      background: white;
+      border: 1px solid var(--toolbar-border);
     }
     .club-card:hover {
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-1px);
     }
     .club-card h3 {
       margin-bottom: 0.3rem;
@@ -223,6 +433,37 @@
       font-size: 0.75rem;
     }
 
+    /* ── Responsive ──────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .schedule-toolbar {
+        padding: 0.6rem 0.75rem;
+        gap: 0.5rem;
+      }
+      .schedule-toolbar .toolbar-divider {
+        display: none;
+      }
+      .schedule-toolbar .toolbar-section {
+        flex-wrap: wrap;
+      }
+      .legend-inline {
+        width: 100%;
+        justify-content: center;
+        padding-top: 0.25rem;
+        border-top: 1px solid var(--toolbar-border);
+      }
+      .notification-cta {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.75rem;
+      }
+      .schedule-header hgroup h1 {
+        font-size: 1.3rem;
+      }
+      .schedule-grid .slot-cell {
+        min-height: 26px;
+      }
+    }
+
     @media (max-width: 576px) {
       .court-picker-grid {
         max-height: 200px;
@@ -239,12 +480,27 @@
       border-radius: 6px;
       margin-bottom: 1rem;
     }
-    .flash.success { background: var(--slot-free-bg); color: #27ae60; }
-    .flash.error   { background: var(--slot-booked-bg); color: #c0392b; }
+    .flash.success { background: var(--slot-free-bg); color: #16a34a; }
+    .flash.error   { background: var(--slot-booked-bg); color: #dc2626; }
 
     .text-muted { opacity: 0.6; }
     .mb-0 { margin-bottom: 0; }
     .sub-inactive { opacity: 0.6; }
+
+    /* ── No-data state ───────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #94a3b8;
+    }
+    .empty-state .empty-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .empty-state p {
+      margin: 0;
+      font-size: 0.95rem;
+    }
   </style>
 </head>
 <body>

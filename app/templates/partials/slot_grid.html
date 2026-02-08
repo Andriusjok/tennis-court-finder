@@ -1,29 +1,36 @@
 {% if not time_rows %}
-<p class="text-muted">No time slots available for this date.</p>
-{% else %}
-<div class="schedule-grid" style="grid-template-columns: 80px repeat({{ courts | length }}, minmax(90px, 1fr));">
-  <!-- Header row: court names -->
-  <div class="header-cell">Time</div>
-  {% for court in courts %}
-  <div class="header-cell" title="{{ court.surface_type | replace('_', ' ') | title }} · {{ court.court_type | title }}">
-    {{ court.name }}<br>
-    <small>{{ court.surface_type | replace('_', ' ') }}</small>
+<div class="schedule-card">
+  <div class="empty-state">
+    <div class="empty-icon">📅</div>
+    <p>No time slots available for this date.</p>
   </div>
-  {% endfor %}
+</div>
+{% else %}
+<div class="schedule-card">
+  <div class="schedule-grid-wrapper">
+    <div class="schedule-grid" style="grid-template-columns: 64px repeat({{ courts | length }}, minmax(72px, 1fr));">
+      <!-- Header row -->
+      <div class="header-cell">Time</div>
+      {% for court in courts %}
+      <div class="header-cell">
+        {{ court.name }}<small>{{ court.surface_type | replace('_', ' ') }}</small>
+      </div>
+      {% endfor %}
 
-  <!-- Data rows -->
-  {% for time_label, row in time_rows %}
-  <div class="time-cell">{{ time_label }}</div>
-  {% for court in courts %}
-    {% set slot = row.get(court.id | string) %}
-    {% if slot %}
-    <div class="slot-cell {{ slot.status }}" title="{{ court.name }} · {{ time_label }} · {{ slot.status | replace('_', ' ') | title }}">
-      {{ slot.status | replace('_', ' ') }}
+      <!-- Data rows -->
+      {% for time_label, row in time_rows %}
+      <div class="time-cell">{{ time_label }}</div>
+      {% for court in courts %}
+        {% set slot = row.get(court.id | string) %}
+        {% if slot %}
+        <div class="slot-cell {{ slot.status }}"
+             data-tooltip="{{ court.name }} · {{ time_label }} · {{ slot.status | replace('_', ' ') | title }}"></div>
+        {% else %}
+        <div class="slot-cell empty"></div>
+        {% endif %}
+      {% endfor %}
+      {% endfor %}
     </div>
-    {% else %}
-    <div class="slot-cell empty">–</div>
-    {% endif %}
-  {% endfor %}
-  {% endfor %}
+  </div>
 </div>
 {% endif %}

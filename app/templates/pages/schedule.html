@@ -3,37 +3,35 @@
 {% block title %}{{ club.name }} – Schedule{% endblock %}
 
 {% block content %}
-<hgroup>
-  <h1>{{ club.name }}</h1>
-  <p>📍 {{ club.address }}, {{ club.city }}
-    {% if club.website %} · <a href="{{ club.website }}" target="_blank">Book on site ↗</a>{% endif %}
-  </p>
-</hgroup>
-
-<!-- Legend -->
-<div class="legend">
-  <span class="l-free">Free</span>
-  <span class="l-booked">Booked</span>
-  <span class="l-for-sale">For Sale</span>
+<div class="schedule-header">
+  <hgroup>
+    <h1>{{ club.name }}</h1>
+    <p>📍 {{ club.address }}, {{ club.city }}
+      {% if club.website %} · <a href="{{ club.website }}" target="_blank">Book on site ↗</a>{% endif %}
+    </p>
+  </hgroup>
 </div>
 
-<!-- Date navigation -->
-<div class="date-nav">
-  <a href="/clubs/{{ club.id }}/schedule?date={{ prev_date }}" role="button" class="outline">&larr;</a>
-  <input type="date" id="date-picker" value="{{ selected_date }}"
-         hx-get="/clubs/{{ club.id }}/schedule"
-         hx-target="body"
-         hx-push-url="true"
-         hx-include="[name='surface_type'],[name='court_type']"
-         name="date">
-  <a href="/clubs/{{ club.id }}/schedule?date={{ next_date }}" role="button" class="outline">&rarr;</a>
-  <a href="/clubs/{{ club.id }}/schedule" role="button" class="outline secondary">Today</a>
-</div>
+<!-- Unified toolbar: date nav + filters + legend -->
+<div class="schedule-toolbar">
+  <!-- Date navigation -->
+  <div class="toolbar-section">
+    <a href="/clubs/{{ club.id }}/schedule?date={{ prev_date }}" role="button" class="outline">&larr;</a>
+    <input type="date" id="date-picker" value="{{ selected_date }}"
+           hx-get="/clubs/{{ club.id }}/schedule"
+           hx-target="body"
+           hx-push-url="true"
+           hx-include="[name='surface_type'],[name='court_type']"
+           name="date">
+    <a href="/clubs/{{ club.id }}/schedule?date={{ next_date }}" role="button" class="outline">&rarr;</a>
+    <a href="/clubs/{{ club.id }}/schedule" role="button" class="outline secondary">Today</a>
+  </div>
 
-<!-- Filters -->
-<div class="filter-bar">
-  <label>
-    Surface
+  <div class="toolbar-divider"></div>
+
+  <!-- Filters -->
+  <div class="toolbar-section">
+    <span class="toolbar-label">Surface</span>
     <select name="surface_type"
             hx-get="/partials/clubs/{{ club.id }}/slots"
             hx-target="#slot-grid"
@@ -43,9 +41,7 @@
       <option value="{{ st }}" {% if st == filters.surface_type %}selected{% endif %}>{{ st | replace('_', ' ') | title }}</option>
       {% endfor %}
     </select>
-  </label>
-  <label>
-    Type
+    <span class="toolbar-label">Type</span>
     <select name="court_type"
             hx-get="/partials/clubs/{{ club.id }}/slots"
             hx-target="#slot-grid"
@@ -55,7 +51,16 @@
       <option value="{{ ct }}" {% if ct == filters.court_type %}selected{% endif %}>{{ ct | title }}</option>
       {% endfor %}
     </select>
-  </label>
+  </div>
+
+  <div class="toolbar-divider"></div>
+
+  <!-- Legend -->
+  <div class="legend-inline">
+    <span class="l-free">Free</span>
+    <span class="l-booked">Booked</span>
+    <span class="l-for-sale">For Sale</span>
+  </div>
 </div>
 
 <!-- Slot grid (HTMX-swappable) -->
@@ -64,22 +69,22 @@
 </div>
 
 <!-- Notification CTA -->
-<hr>
-<p>
-  Want to know when a slot opens up?
-  <a href="/notifications/new?club_id={{ club.id }}">Set up an alert →</a>
-</p>
+<div class="notification-cta">
+  <div class="cta-icon">🔔</div>
+  <div class="cta-text">
+    <strong>Never miss an open court</strong>
+    <p>Get notified when a slot frees up at {{ club.name }}.</p>
+  </div>
+  <a href="/notifications/new?club_id={{ club.id }}" role="button">Set up alert</a>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  // Sync the flatpickr date picker with HTMX navigation
   document.addEventListener("DOMContentLoaded", function() {
     flatpickr("#date-picker", {
       dateFormat: "Y-m-d",
-      onChange: function(selectedDates, dateStr) {
-        // HTMX will handle the request via hx-get on the input
-      }
+      onChange: function(selectedDates, dateStr) {}
     });
   });
 </script>
