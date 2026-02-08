@@ -17,6 +17,8 @@ from app.services.notifier import notifier
 from app.services.registry import registry
 from app.services.seb_arena.client import SebArenaClient
 from app.services.seb_arena.service import SebArenaService
+from app.services.teniso_erdve.client import TenisoErdveClient
+from app.services.teniso_erdve.service import TenisoErdveService
 
 _SPEC_PATH = Path(__file__).resolve().parent.parent / "openapi.yaml"
 
@@ -37,6 +39,9 @@ async def lifespan(app: FastAPI):
 
     bt_client = BalticTennisClient()
     registry.register(BalticTennisService(bt_client), bt_client)
+
+    te_client = TenisoErdveClient()
+    registry.register(TenisoErdveService(te_client), te_client)
     await registry.start()
     await notifier.start()
     yield
