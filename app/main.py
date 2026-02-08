@@ -11,8 +11,12 @@ from app import db
 from app.config import ENVIRONMENT
 from app.rate_limit import limiter
 from app.routers import auth, clubs, courts, health, notifications, pages, time_slots
+from app.services.baltic_tennis.client import BalticTennisClient
+from app.services.baltic_tennis.service import BalticTennisService
 from app.services.notifier import notifier
 from app.services.registry import registry
+from app.services.seb_arena.client import SebArenaClient
+from app.services.seb_arena.service import SebArenaService
 
 _SPEC_PATH = Path(__file__).resolve().parent.parent / "openapi.yaml"
 
@@ -28,7 +32,11 @@ _openapi_spec = _load_openapi_spec()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_db()
-    registry.register_seb_arena()
+    seb_client = SebArenaClient()
+    registry.register(SebArenaService(seb_client), seb_client)
+
+    bt_client = BalticTennisClient()
+    registry.register(BalticTennisService(bt_client), bt_client)
     await registry.start()
     await notifier.start()
     yield

@@ -1,29 +1,37 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from fastapi import HTTPException
 
 from app.generated.models import Club
 from app.services.cache import CachedClubService
-from app.services.seb_arena.client import SebArenaClient
-from app.services.seb_arena.config import CLUB_ID as SEB_ARENA_CLUB_ID
-from app.services.seb_arena.service import SebArenaService
 
 _REFRESH_INTERVAL = 60.0
+
+
+class _Closeable(Protocol):
+    async def close(self) -> None: ...
 
 
 class ClubRegistry:
     def __init__(self) -> None:
         self._services: dict[str, CachedClubService] = {}
-        self._clients: list[SebArenaClient] = []
+        self._clients: list[_Closeable] = []
 
-    def register_seb_arena(self) -> None:
-        client = SebArenaClient()
-        raw_service = SebArenaService(client)
-        cached_service = CachedClubService(
-            raw_service,
-            refresh_interval_seconds=_REFRESH_INTERVAL,
+    def register(
+        self,
+        service: object,
+        client: _Closeable,
+        *,
+        refresh_interval_seconds: float = _REFRESH_INTERVAL,
+    ) -> None:
+        cached = CachedClubService(
+            service,
+            refresh_interval_seconds=refresh_interval_seconds,
         )
-        self._services[SEB_ARENA_CLUB_ID] = cached_service
+        club_id = cached.get_club().id
+        self._services[club_id] = cached
         self._clients.append(client)
 
     async def start(self) -> None:

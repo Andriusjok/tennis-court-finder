@@ -33,7 +33,7 @@ def _test_env(monkeypatch, tmp_path):
     svc2 = MockClubService(club=MOCK_CLUB_2, courts=[], time_slots=[])
     test_registry._services[MOCK_CLUB_2.id] = svc2
 
-    test_registry.register_seb_arena = lambda: None  # type: ignore[assignment]
+    test_registry.register = lambda *a, **kw: None  # type: ignore[assignment]
 
     for mod_path in (
         "app.services.registry",

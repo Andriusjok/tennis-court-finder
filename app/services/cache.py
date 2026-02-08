@@ -88,7 +88,8 @@ class CachedClubService(BackgroundWorker):
         refresh_interval_seconds: float = 60.0,
         fetch_days: int = _DEFAULT_FETCH_DAYS,
     ) -> None:
-        super().__init__(interval=refresh_interval_seconds, name="cache-refresh")
+        club_id = delegate.get_club().id
+        super().__init__(interval=refresh_interval_seconds, name=f"cache-{club_id}")
         self._delegate = delegate
         self._cache = SlotCache()
         self._fetch_days = fetch_days
@@ -100,12 +101,13 @@ class CachedClubService(BackgroundWorker):
         await self._refresh()
 
     async def _refresh(self) -> None:
-        logger.info("Refreshing cache from upstream...")
+        logger.info("[%s] Refreshing cache from upstream...", self._name)
         today = date.today()
         date_to = today + timedelta(days=self._fetch_days - 1)
         courts = await self._delegate.list_courts()
         slots = await self._delegate.list_time_slots(date_from=today, date_to=date_to)
         self._cache.update(courts, slots)
+        logger.info("[%s] Cache ready: %d courts, %d slots", self._name, len(courts), len(slots))
 
     def get_club(self) -> Club:
         return self._delegate.get_club()
